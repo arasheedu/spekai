@@ -1,0 +1,7 @@
+{
+  "typescript.preferences.includePackageJsonAutoImports": "off",
+  "typescript.validate.enable": true,
+  "files.exclude": {
+    "**/node_modules": false
+  }
+}

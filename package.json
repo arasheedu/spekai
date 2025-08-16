@@ -1,0 +1,52 @@
+{
+  "name": "spekai",
+  "displayName": "SpekAi",
+  "description": "Test OpenAPI specifications with a React-based UI",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:spekai.openTester"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "spekai.openTester",
+        "title": "Open SpekAi Tester",
+        "category": "SpekAi"
+      }
+    ],
+    "configuration": {
+      "title": "SpekAi",
+      "properties": {
+        "spekai.claudeApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic Claude API key for generating realistic test data",
+          "scope": "application"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "build-ui": "cd ui && npm run build",
+    "dev": "concurrently \"npm run watch\" \"cd ui && npm run dev\""
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.60.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4",
+    "concurrently": "^7.6.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.3"
+  }
+}
