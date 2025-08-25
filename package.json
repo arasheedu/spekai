@@ -3,6 +3,7 @@
   "displayName": "SpekAi",
   "description": "Test OpenAPI specifications with a React-based UI",
   "version": "0.1.0",
+  "publisher": "BitsPlus",
   "engines": {
     "vscode": "^1.60.0"
   },
@@ -41,10 +42,10 @@
     "dev": "concurrently \"npm run watch\" \"cd ui && npm run dev\""
   },
   "devDependencies": {
+    "@types/node": "^24.3.0",
     "@types/vscode": "^1.60.0",
-    "@types/node": "16.x",
-    "typescript": "^4.9.4",
-    "concurrently": "^7.6.0"
+    "concurrently": "^7.6.0",
+    "typescript": "^4.9.4"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.3"

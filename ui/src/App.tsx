@@ -136,6 +136,13 @@ const App: React.FC = () => {
   const [generatingLlm, setGeneratingLlm] = useState<Record<string, boolean>>({});
   const [editableJsonInput, setEditableJsonInput] = useState<Record<string, string>>({});
   const [customHeaders, setCustomHeaders] = useState<Record<string, Array<{key: string, value: string}>>>({});
+  
+  // Fallback mode states
+  const [fallbackMode, setFallbackMode] = useState(false);
+  const [fallbackJsonInput, setFallbackJsonInput] = useState('{\n  "key": "value"\n}');
+  const [fallbackHeaders, setFallbackHeaders] = useState<Array<{key: string, value: string}>>([]);
+  const [fallbackResponse, setFallbackResponse] = useState<string>('');
+  const [lastFallbackMethod, setLastFallbackMethod] = useState<string>('');
 
   useEffect(() => {
     if (window.acquireVsCodeApi) {
@@ -171,6 +178,11 @@ const App: React.FC = () => {
           case 'error':
             setError(message.message);
             setLoading(false);
+            // Enable fallback mode if URL was provided but spec loading failed
+            if (url.trim()) {
+              setFallbackMode(true);
+              setBaseApiUrl(url.trim());
+            }
             break;
           case 'llmJsonGenerated':
             setLlmGeneratedJson(prev => ({
@@ -383,6 +395,8 @@ const App: React.FC = () => {
     setOperations([]);
     setBaseApiUrl('');
     setOpenApiSpec(null);
+    setFallbackMode(false);
+    setFallbackResponse('');
     
     if (vscode) {
       vscode.postMessage({
@@ -1139,6 +1153,89 @@ Generate realistic, valid JSON test data for the following API operation in the 
     return JSON.stringify(outputJson, null, 2);
   };
 
+  const handleFallbackOperation = (method: string) => {
+    if (!vscode) {
+      setError('VSCode API not available');
+      return;
+    }
+
+    if (!baseApiUrl) {
+      setError('URL not available');
+      return;
+    }
+
+    setFallbackResponse('');
+    setError(null);
+
+    try {
+      const headers: Record<string, string> = {};
+      
+      // Add custom headers
+      fallbackHeaders.forEach(header => {
+        if (header.key.trim() && header.value.trim()) {
+          headers[header.key.trim()] = header.value.trim();
+        }
+      });
+
+      let requestBody;
+      if (['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) {
+        try {
+          requestBody = JSON.parse(fallbackJsonInput);
+          headers['Content-Type'] = 'application/json';
+        } catch (e) {
+          setError('Invalid JSON in request body');
+          return;
+        }
+      }
+
+      vscode.postMessage({
+        command: 'testApiOperation',
+        operation: {
+          id: `fallback_${method.toLowerCase()}`,
+          url: baseApiUrl,
+          method: method.toUpperCase(),
+          headers,
+          body: requestBody
+        }
+      });
+
+      // Set a placeholder result to show loading state and track the last method used
+      setLastFallbackMethod(method.toLowerCase());
+      setTestResults(prev => ({
+        ...prev,
+        [`fallback_${method.toLowerCase()}`]: { operationId: `fallback_${method.toLowerCase()}` }
+      }));
+
+    } catch (error) {
+      setError(`Failed to execute ${method} request: ${error}`);
+    }
+  };
+
+  const getFallbackResponse = (method: string) => {
+    const result = testResults[`fallback_${method.toLowerCase()}`];
+    if (!result) return '';
+    
+    const outputJson: any = {};
+    
+    if (result.status) {
+      outputJson.status = result.status;
+    }
+    
+    if (result.result) {
+      try {
+        outputJson.response = JSON.parse(result.result);
+      } catch {
+        outputJson.response = result.result;
+      }
+    }
+    
+    if (result.error) {
+      outputJson.error = result.error;
+    }
+    
+    return JSON.stringify(outputJson, null, 2);
+  };
+
   return (
     <div className="container">
       <div className="url-input-section">
@@ -1150,6 +1247,13 @@ Generate realistic, valid JSON test data for the following API operation in the 
           className="url-input"
           onKeyDown={(e) => e.key === 'Enter' && handleLoadSpec()}
         />
+        <button
+          onClick={handleLoadSpec}
+          disabled={loading}
+          className="load-button"
+        >
+          {loading ? 'Loading...' : 'Load'}
+        </button>
         <select
           value={selectedLocale}
           onChange={(e) => setSelectedLocale(e.target.value)}
@@ -1161,13 +1265,6 @@ Generate realistic, valid JSON test data for the following API operation in the 
             </option>
           ))}
         </select>
-        <button
-          onClick={handleLoadSpec}
-          disabled={loading}
-          className="load-button"
-        >
-          {loading ? 'Loading...' : 'Load'}
-        </button>
       </div>
 
       {error && (
@@ -1217,7 +1314,66 @@ Generate realistic, valid JSON test data for the following API operation in the 
         </div>
       )}
 
-      {operations.length > 0 && (
+      {fallbackMode ? (
+        <div className="fallback-mode">
+          <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: 'var(--vscode-textCodeBlock-background)', borderRadius: '4px', border: '1px solid var(--vscode-panel-border)' }}>
+            <h3 style={{ margin: '0 0 10px 0', color: 'var(--vscode-foreground)' }}>Manual API Testing</h3>
+            <p style={{ margin: 0, color: 'var(--vscode-descriptionForeground)', fontSize: '14px' }}>
+              Unable to load OpenAPI specification. You can still test the API manually using the buttons below.
+            </p>
+          </div>
+
+          <div className="fallback-content">
+            <div className="fallback-left-panel">
+              <div className="json-section">
+                <h3>Request Body (JSON)</h3>
+                <textarea
+                  className="json-editor"
+                  value={fallbackJsonInput}
+                  onChange={(e) => setFallbackJsonInput(e.target.value)}
+                  placeholder="Enter JSON request body for POST/PUT operations..."
+                />
+              </div>
+
+              <div className="json-section">
+                <h3>Custom Headers</h3>
+                <HeadersEditor
+                  headers={fallbackHeaders}
+                  onChange={(headers) => setFallbackHeaders(headers)}
+                />
+              </div>
+
+              <div className="http-methods-section">
+                <h3>HTTP Methods</h3>
+                <div className="http-methods-grid">
+                  {['GET', 'POST', 'PUT', 'DELETE'].map(method => (
+                    <button
+                      key={method}
+                      onClick={() => handleFallbackOperation(method)}
+                      className={`test-button method-button method-${method.toLowerCase()}`}
+                      style={{ padding: '12px 24px', fontSize: '14px', minWidth: '100px' }}
+                    >
+                      {method}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="fallback-right-panel">
+              <div className="json-section">
+                <h3>Response</h3>
+                <textarea
+                  className="json-editor"
+                  value={lastFallbackMethod ? getFallbackResponse(lastFallbackMethod) : ''}
+                  readOnly
+                  placeholder="Response will appear here after making a request..."
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : operations.length > 0 ? (
         <div className="main-content">
           <div className="left-panel">
             <ul className="operations-list">
@@ -1416,7 +1572,7 @@ Generate realistic, valid JSON test data for the following API operation in the 
             )}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };
