@@ -49,7 +49,7 @@ export class SpekAiPanel {
             message => {
                 switch (message.command) {
                     case 'fetchOpenApiSpec':
-                        this._fetchOpenApiSpec(message.url);
+                        this._fetchOpenApiSpec(message.url, message.clientCert);
                         return;
                     case 'testApiOperation':
                         this._testApiOperation(message.operation);
@@ -113,7 +113,7 @@ export class SpekAiPanel {
             </html>`;
     }
 
-    private async _fetchOpenApiSpec(url: string) {
+    private async _fetchOpenApiSpec(url: string, clientCert?: any) {
         try {
             let content: string;
             let spec: any;
@@ -136,7 +136,7 @@ export class SpekAiPanel {
                 content = await fs.promises.readFile(filePath, 'utf8');
             } else {
                 // Handle HTTP/HTTPS URLs
-                content = await this._httpGet(url);
+                content = await this._httpGet(url, clientCert);
             }
 
             // Parse the content - try JSON first, then YAML
@@ -205,16 +205,13 @@ export class SpekAiPanel {
         }
     }
 
-    private _httpGet(url: string): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const client = url.startsWith('https:') ? https : http;
-            
-            client.get(url, (res) => {
-                let data = '';
-                res.on('data', (chunk) => data += chunk);
-                res.on('end', () => resolve(data));
-            }).on('error', reject);
+    private async _httpGet(url: string, clientCert?: any): Promise<string> {
+        const response = await this._httpRequest(url, {
+            method: 'GET',
+            headers: {},
+            clientCert: clientCert
         });
+        return response.body;
     }
 
     private _httpRequest(url: string, options: any): Promise<{body: string, statusCode: number}> {

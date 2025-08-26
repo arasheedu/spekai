@@ -474,10 +474,20 @@ const App: React.FC = () => {
     setFallbackMode(false);
     setFallbackResponse('');
     
+    // Prepare client certificate data if enabled
+    const clientCert = clientCertEnabled ? {
+      enabled: true,
+      certPath: clientCertPath,
+      keyPath: clientKeyPath,
+      passphrase: clientCertPassphrase || undefined,
+      caCertPath: caCertPath || undefined
+    } : undefined;
+
     if (vscode) {
       vscode.postMessage({
         command: 'fetchOpenApiSpec',
-        url: url.trim()
+        url: url.trim(),
+        clientCert
       });
     } else {
       setError('VSCode API not available');
@@ -1533,7 +1543,7 @@ Generate realistic, valid JSON test data for the following API operation in the 
           
           {clientCertEnabled && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
                 <label style={{ 
                   fontSize: '12px',
                   fontWeight: 'bold',
@@ -1554,14 +1564,18 @@ Generate realistic, valid JSON test data for the following API operation in the 
                   className="test-button"
                   style={{ 
                     backgroundColor: 'var(--vscode-button-secondaryBackground)',
-                    color: 'var(--vscode-button-secondaryForeground)'
+                    color: 'var(--vscode-button-secondaryForeground)',
+                    height: '34px',
+                    fontSize: '12px',
+                    padding: '0 12px',
+                    minWidth: 'auto'
                   }}
                 >
                   Browse
                 </button>
               </div>
               
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
                 <label style={{ 
                   fontSize: '12px',
                   fontWeight: 'bold',
@@ -1582,7 +1596,11 @@ Generate realistic, valid JSON test data for the following API operation in the 
                   className="test-button"
                   style={{ 
                     backgroundColor: 'var(--vscode-button-secondaryBackground)',
-                    color: 'var(--vscode-button-secondaryForeground)'
+                    color: 'var(--vscode-button-secondaryForeground)',
+                    height: '34px',
+                    fontSize: '12px',
+                    padding: '0 12px',
+                    minWidth: 'auto'
                   }}
                 >
                   Browse
@@ -1607,7 +1625,7 @@ Generate realistic, valid JSON test data for the following API operation in the 
                 />
               </div>
               
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
                 <label style={{ 
                   fontSize: '12px',
                   fontWeight: 'bold',
@@ -1628,7 +1646,11 @@ Generate realistic, valid JSON test data for the following API operation in the 
                   className="test-button"
                   style={{ 
                     backgroundColor: 'var(--vscode-button-secondaryBackground)',
-                    color: 'var(--vscode-button-secondaryForeground)'
+                    color: 'var(--vscode-button-secondaryForeground)',
+                    height: '34px',
+                    fontSize: '12px',
+                    padding: '0 12px',
+                    minWidth: 'auto'
                   }}
                 >
                   Browse
