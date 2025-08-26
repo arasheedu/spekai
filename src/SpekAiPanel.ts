@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as https from 'https';
 import * as http from 'http';
 import * as fs from 'fs';
+import * as yaml from 'js-yaml';
 import Anthropic from '@anthropic-ai/sdk';
 
 export class SpekAiPanel {
@@ -62,6 +63,9 @@ export class SpekAiPanel {
                     case 'loadTestData':
                         this._loadTestData(message.currentOperationId);
                         return;
+                    case 'browseFile':
+                        this._browseFile(message.fileType);
+                        return;
                 }
             },
             null,
@@ -111,8 +115,41 @@ export class SpekAiPanel {
 
     private async _fetchOpenApiSpec(url: string) {
         try {
-            const response = await this._httpGet(url);
-            const spec = JSON.parse(response);
+            let content: string;
+            let spec: any;
+
+            if (url.startsWith('file://')) {
+                // Handle local file loading
+                let filePath = url.replace('file://', '');
+                
+                // Handle Windows-style paths vs Unix-style paths
+                if (process.platform === 'win32') {
+                    // On Windows, remove leading slash and convert forward slashes to backslashes
+                    filePath = filePath.replace(/^\//, '').replace(/\//g, '\\');
+                } else {
+                    // On Unix-like systems, ensure leading slash is present
+                    if (!filePath.startsWith('/')) {
+                        filePath = '/' + filePath;
+                    }
+                }
+                
+                content = await fs.promises.readFile(filePath, 'utf8');
+            } else {
+                // Handle HTTP/HTTPS URLs
+                content = await this._httpGet(url);
+            }
+
+            // Parse the content - try JSON first, then YAML
+            try {
+                spec = JSON.parse(content);
+            } catch (jsonError) {
+                // If JSON parsing fails, try YAML parsing
+                try {
+                    spec = yaml.load(content);
+                } catch (yamlError) {
+                    throw new Error(`Failed to parse as JSON or YAML: JSON error: ${jsonError}, YAML error: ${yamlError}`);
+                }
+            }
             
             this._panel.webview.postMessage({
                 command: 'openApiSpecLoaded',
@@ -149,7 +186,8 @@ export class SpekAiPanel {
             const result = await this._httpRequest(operation.url, {
                 method: operation.method,
                 headers: operation.headers || {},
-                body: requestBody
+                body: requestBody,
+                clientCert: operation.clientCert
             });
             
             this._panel.webview.postMessage({
@@ -190,13 +228,34 @@ export class SpekAiPanel {
             }
             const client = urlObj.protocol === 'https:' ? https : http;
             
-            const requestOptions = {
+            const requestOptions: any = {
                 hostname: urlObj.hostname,
                 port: urlObj.port,
                 path: urlObj.pathname + urlObj.search,
                 method: options.method || 'GET',
                 headers: options.headers || {}
             };
+
+            // Add client certificate options if provided
+            if (options.clientCert && options.clientCert.enabled) {
+                try {
+                    if (options.clientCert.certPath) {
+                        requestOptions.cert = fs.readFileSync(options.clientCert.certPath);
+                    }
+                    if (options.clientCert.keyPath) {
+                        requestOptions.key = fs.readFileSync(options.clientCert.keyPath);
+                    }
+                    if (options.clientCert.passphrase) {
+                        requestOptions.passphrase = options.clientCert.passphrase;
+                    }
+                    if (options.clientCert.caCertPath) {
+                        requestOptions.ca = fs.readFileSync(options.clientCert.caCertPath);
+                    }
+                } catch (certError) {
+                    reject(new Error(`Client certificate error: ${certError}`));
+                    return;
+                }
+            }
 
             const req = client.request(requestOptions, (res) => {
                 let data = '';
@@ -358,6 +417,73 @@ export class SpekAiPanel {
                 command: 'saveLoadError',
                 error: `Failed to load test data: ${error instanceof Error ? error.message : error}`
             });
+        }
+    }
+
+    private async _browseFile(fileType: string) {
+        try {
+            // Determine file filters based on file type
+            let filters: { [name: string]: string[] };
+            let title: string;
+            
+            switch (fileType) {
+                case 'clientCert':
+                    filters = {
+                        'Certificate Files': ['crt', 'pem', 'cer'],
+                        'All Files': ['*']
+                    };
+                    title = 'Select Client Certificate File';
+                    break;
+                case 'clientKey':
+                    filters = {
+                        'Key Files': ['key', 'pem'],
+                        'All Files': ['*']
+                    };
+                    title = 'Select Client Private Key File';
+                    break;
+                case 'caCert':
+                    filters = {
+                        'Certificate Files': ['crt', 'pem', 'cer'],
+                        'All Files': ['*']
+                    };
+                    title = 'Select CA Certificate File';
+                    break;
+                case 'openApiSpec':
+                    filters = {
+                        'OpenAPI/Swagger Files': ['json', 'yaml', 'yml'],
+                        'JSON Files': ['json'],
+                        'YAML Files': ['yaml', 'yml'],
+                        'All Files': ['*']
+                    };
+                    title = 'Select OpenAPI Specification File';
+                    break;
+                default:
+                    filters = {
+                        'All Files': ['*']
+                    };
+                    title = 'Select File';
+            }
+
+            // Show open dialog
+            const openUri = await vscode.window.showOpenDialog({
+                canSelectFiles: true,
+                canSelectFolders: false,
+                canSelectMany: false,
+                filters: filters,
+                openLabel: 'Select',
+                title: title
+            });
+
+            if (openUri && openUri[0]) {
+                this._panel.webview.postMessage({
+                    command: 'fileSelected',
+                    fileType: fileType,
+                    filePath: openUri[0].fsPath
+                });
+            }
+        } catch (error) {
+            console.error('Browse file error:', error);
+            vscode.window.showErrorMessage(`Failed to browse file: ${error instanceof Error ? error.message : error}`);
         }
     }
 }

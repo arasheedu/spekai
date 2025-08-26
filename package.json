@@ -2,7 +2,7 @@
   "name": "spekai",
   "displayName": "SpekAi",
   "description": "Test OpenAPI specifications with a React-based UI",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "BitsPlus",
   "engines": {
     "vscode": "^1.60.0"
@@ -48,6 +48,8 @@
     "typescript": "^4.9.4"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.24.3"
+    "@anthropic-ai/sdk": "^0.24.3",
+    "@types/js-yaml": "^4.0.9",
+    "js-yaml": "^4.1.0"
   }
 }

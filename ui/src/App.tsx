@@ -143,6 +143,23 @@ const App: React.FC = () => {
   const [fallbackHeaders, setFallbackHeaders] = useState<Array<{key: string, value: string}>>([]);
   const [fallbackResponse, setFallbackResponse] = useState<string>('');
   const [lastFallbackMethod, setLastFallbackMethod] = useState<string>('');
+  
+  // Client certificate states
+  const [clientCertEnabled, setClientCertEnabled] = useState(false);
+  const [clientCertPath, setClientCertPath] = useState<string>('');
+  const [clientKeyPath, setClientKeyPath] = useState<string>('');
+  const [clientCertPassphrase, setClientCertPassphrase] = useState<string>('');
+  const [caCertPath, setCaCertPath] = useState<string>('');
+
+  // Auto-enable fallback mode when error conditions are met
+  useEffect(() => {
+    if (error && operations.length === 0 && url.trim() && !fallbackMode) {
+      setFallbackMode(true);
+      if (!baseApiUrl) {
+        setBaseApiUrl(url.trim());
+      }
+    }
+  }, [error, operations.length, url, fallbackMode, baseApiUrl]);
 
   useEffect(() => {
     if (window.acquireVsCodeApi) {
@@ -215,68 +232,127 @@ const App: React.FC = () => {
             if (message.testData) {
               const loadedOperation = message.testData.operation;
               
-              // Get current operations state immediately and also through state access
-              setOperations(currentOps => {
-                // Find the matching operation in the current operations list
-                const matchingOperation = currentOps.find(op => 
-                  op.method === loadedOperation.method && op.path === loadedOperation.path
-                );
+              // Check if this is fallback mode data
+              if (message.testData.fallbackMode || loadedOperation.method === 'FALLBACK') {
+                // Load fallback mode data
+                setError(null);
+                setFallbackMode(true);
+                setFallbackJsonInput(message.testData.inputJson || '{\n  "key": "value"\n}');
+                setFallbackHeaders(message.testData.customHeaders || []);
                 
-                if (matchingOperation) {
-                  // Clear any existing errors when load succeeds
-                  setError(null);
-                  
-                  // Set the matching operation as selected
-                  setSelectedOperation(matchingOperation);
-                  
-                  // Load the input JSON for this operation
-                  setEditableJsonInput(prev => ({
-                    ...prev,
-                    [matchingOperation.id]: message.testData.inputJson
-                  }));
-                  
-                  // Load custom headers if available
-                  if (message.testData.customHeaders) {
-                    setCustomHeaders(prev => ({
-                      ...prev,
-                      [matchingOperation.id]: message.testData.customHeaders
-                    }));
-                  }
-                  
-                  // Optionally update API base URL
-                  if (message.testData.apiBaseUrl && message.testData.apiBaseUrl !== baseApiUrl) {
-                    const shouldUpdateUrl = confirm(
-                      `The loaded test data uses a different API base URL:\n${message.testData.apiBaseUrl}\n\nDo you want to update the current API base URL?`
-                    );
-                    if (shouldUpdateUrl) {
-                      setBaseApiUrl(message.testData.apiBaseUrl);
-                    }
-                  }
-                } else {
-                  // Check if any operations are loaded at all
-                  if (currentOps.length === 0) {
-                    setError(
-                      `Could not find matching operation: ${loadedOperation.method} ${loadedOperation.path}\n\n` +
-                      `No operations are currently loaded. Please load an OpenAPI specification first, then try loading your test data again.`
-                    );
-                  } else {
-                    // Show available operations to help user understand the mismatch
-                    const availableOps = currentOps.map(op => `${op.method} ${op.path}`).join(', ');
-                    setError(
-                      `Could not find matching operation: ${loadedOperation.method} ${loadedOperation.path}\n\n` +
-                      `Available operations in current spec: ${availableOps}\n\n` +
-                      `Please load the correct OpenAPI specification that contains this operation.`
-                    );
-                  }
+                // Load client certificate data if available
+                if (message.testData.clientCert) {
+                  setClientCertEnabled(message.testData.clientCert.enabled || false);
+                  setClientCertPath(message.testData.clientCert.certPath || '');
+                  setClientKeyPath(message.testData.clientCert.keyPath || '');
+                  setClientCertPassphrase(message.testData.clientCert.passphrase || '');
+                  setCaCertPath(message.testData.clientCert.caCertPath || '');
                 }
                 
-                // Return the same operations (no change)
-                return currentOps;
-              });
+                if (message.testData.apiBaseUrl && message.testData.apiBaseUrl !== baseApiUrl) {
+                  const shouldUpdateUrl = confirm(
+                    `The loaded test data uses a different API base URL:\n${message.testData.apiBaseUrl}\n\nDo you want to update the current API base URL?`
+                  );
+                  if (shouldUpdateUrl) {
+                    setBaseApiUrl(message.testData.apiBaseUrl);
+                  }
+                }
+              } else {
+                // Get current operations state immediately and also through state access
+                setOperations(currentOps => {
+                  // Find the matching operation in the current operations list
+                  const matchingOperation = currentOps.find(op => 
+                    op.method === loadedOperation.method && op.path === loadedOperation.path
+                  );
+                  
+                  if (matchingOperation) {
+                    // Clear any existing errors when load succeeds
+                    setError(null);
+                    
+                    // Set the matching operation as selected
+                    setSelectedOperation(matchingOperation);
+                    
+                    // Load the input JSON for this operation
+                    setEditableJsonInput(prev => ({
+                      ...prev,
+                      [matchingOperation.id]: message.testData.inputJson
+                    }));
+                    
+                    // Load custom headers if available
+                    if (message.testData.customHeaders) {
+                      setCustomHeaders(prev => ({
+                        ...prev,
+                        [matchingOperation.id]: message.testData.customHeaders
+                      }));
+                    }
+                    
+                    // Load client certificate data if available
+                    if (message.testData.clientCert) {
+                      setClientCertEnabled(message.testData.clientCert.enabled || false);
+                      setClientCertPath(message.testData.clientCert.certPath || '');
+                      setClientKeyPath(message.testData.clientCert.keyPath || '');
+                      setClientCertPassphrase(message.testData.clientCert.passphrase || '');
+                      setCaCertPath(message.testData.clientCert.caCertPath || '');
+                    }
+                    
+                    // Optionally update API base URL
+                    if (message.testData.apiBaseUrl && message.testData.apiBaseUrl !== baseApiUrl) {
+                      const shouldUpdateUrl = confirm(
+                        `The loaded test data uses a different API base URL:\n${message.testData.apiBaseUrl}\n\nDo you want to update the current API base URL?`
+                      );
+                      if (shouldUpdateUrl) {
+                        setBaseApiUrl(message.testData.apiBaseUrl);
+                      }
+                    }
+                  } else {
+                    // Check if any operations are loaded at all
+                    if (currentOps.length === 0) {
+                      setError(
+                        `Could not find matching operation: ${loadedOperation.method} ${loadedOperation.path}\n\n` +
+                        `No operations are currently loaded. Please load an OpenAPI specification first, then try loading your test data again.`
+                      );
+                    } else {
+                      // Show available operations to help user understand the mismatch
+                      const availableOps = currentOps.map(op => `${op.method} ${op.path}`).join(', ');
+                      setError(
+                        `Could not find matching operation: ${loadedOperation.method} ${loadedOperation.path}\n\n` +
+                        `Available operations in current spec: ${availableOps}\n\n` +
+                        `Please load the correct OpenAPI specification that contains this operation.`
+                      );
+                    }
+                  }
+                  
+                  // Return the same operations (no change)
+                  return currentOps;
+                });
+              }
             }
             break;
           case 'saveLoadError':
             setError(message.error);
+            break;
+          case 'fileSelected':
+            // Handle file selection from browse dialog
+            if (message.fileType && message.filePath) {
+              switch (message.fileType) {
+                case 'clientCert':
+                  setClientCertPath(message.filePath);
+                  break;
+                case 'clientKey':
+                  setClientKeyPath(message.filePath);
+                  break;
+                case 'caCert':
+                  setCaCertPath(message.filePath);
+                  break;
+                case 'openApiSpec':
+                  // Convert file path to file:// URL format
+                  const fileUrl = message.filePath.startsWith('file://') 
+                    ? message.filePath 
+                    : `file://${message.filePath.replace(/\\/g, '/')}`;
+                  setUrl(fileUrl);
+                  break;
+              }
+            }
             break;
         }
       };
@@ -528,6 +604,15 @@ const App: React.FC = () => {
     }
 
 
+    // Prepare client certificate data if enabled
+    const clientCert = clientCertEnabled ? {
+      enabled: true,
+      certPath: clientCertPath,
+      keyPath: clientKeyPath,
+      passphrase: clientCertPassphrase || undefined,
+      caCertPath: caCertPath || undefined
+    } : undefined;
+
     vscode.postMessage({
       command: 'testApiOperation',
       operation: {
@@ -535,7 +620,8 @@ const App: React.FC = () => {
         url: testUrl,
         method: operation.method,
         headers,
-        body: requestBody
+        body: requestBody,
+        clientCert
       }
     });
 
@@ -1098,6 +1184,13 @@ Generate realistic, valid JSON test data for the following API operation in the 
         inputJson: getCurrentJsonInput(operation),
         outputJson: formatJsonOutput(operation),
         customHeaders: customHeaders[operation.id] || [],
+        clientCert: clientCertEnabled ? {
+          enabled: true,
+          certPath: clientCertPath,
+          keyPath: clientKeyPath,
+          passphrase: clientCertPassphrase,
+          caCertPath: caCertPath
+        } : undefined,
         timestamp: new Date().toISOString(),
         apiBaseUrl: baseApiUrl
       };
@@ -1126,6 +1219,75 @@ Generate realistic, valid JSON test data for the following API operation in the 
     } catch (error) {
       setError(`Failed to load test data: ${error}`);
     }
+  };
+
+  const saveFallbackTestData = () => {
+    if (!vscode) {
+      setError('VSCode API not available');
+      return;
+    }
+
+    try {
+      const effectiveApiUrl = baseApiUrl || url.trim();
+      const testData = {
+        operation: {
+          id: `fallback_${lastFallbackMethod || 'manual'}`,
+          method: 'FALLBACK',
+          path: effectiveApiUrl,
+          summary: 'Manual API Testing'
+        },
+        inputJson: fallbackJsonInput,
+        outputJson: lastFallbackMethod ? getFallbackResponse(lastFallbackMethod) : '',
+        customHeaders: fallbackHeaders,
+        clientCert: clientCertEnabled ? {
+          enabled: true,
+          certPath: clientCertPath,
+          keyPath: clientKeyPath,
+          passphrase: clientCertPassphrase,
+          caCertPath: caCertPath
+        } : undefined,
+        timestamp: new Date().toISOString(),
+        apiBaseUrl: effectiveApiUrl,
+        fallbackMode: true
+      };
+
+      vscode.postMessage({
+        command: 'saveTestData',
+        testData: testData,
+        operationId: `fallback_${lastFallbackMethod || 'manual'}`
+      });
+    } catch (error) {
+      setError(`Failed to save fallback test data: ${error}`);
+    }
+  };
+
+  const loadFallbackTestData = () => {
+    if (!vscode) {
+      setError('VSCode API not available');
+      return;
+    }
+
+    try {
+      vscode.postMessage({
+        command: 'loadTestData',
+        currentOperationId: `fallback_${lastFallbackMethod || 'manual'}`,
+        fallbackMode: true
+      });
+    } catch (error) {
+      setError(`Failed to load fallback test data: ${error}`);
+    }
+  };
+
+  const handleBrowseFile = (fileType: 'clientCert' | 'clientKey' | 'caCert' | 'openApiSpec') => {
+    if (!vscode) {
+      setError('VSCode API not available');
+      return;
+    }
+
+    vscode.postMessage({
+      command: 'browseFile',
+      fileType: fileType
+    });
   };
 
   const formatJsonOutput = (operation: Operation) => {
@@ -1159,13 +1321,15 @@ Generate realistic, valid JSON test data for the following API operation in the 
       return;
     }
 
-    if (!baseApiUrl) {
+    const effectiveApiUrl = baseApiUrl || url.trim();
+    if (!effectiveApiUrl) {
       setError('URL not available');
       return;
     }
 
     setFallbackResponse('');
     setError(null);
+    setFallbackMode(true);
 
     try {
       const headers: Record<string, string> = {};
@@ -1188,14 +1352,24 @@ Generate realistic, valid JSON test data for the following API operation in the 
         }
       }
 
+      // Prepare client certificate data if enabled
+      const clientCert = clientCertEnabled ? {
+        enabled: true,
+        certPath: clientCertPath,
+        keyPath: clientKeyPath,
+        passphrase: clientCertPassphrase || undefined,
+        caCertPath: caCertPath || undefined
+      } : undefined;
+
       vscode.postMessage({
         command: 'testApiOperation',
         operation: {
           id: `fallback_${method.toLowerCase()}`,
-          url: baseApiUrl,
+          url: effectiveApiUrl,
           method: method.toUpperCase(),
           headers,
-          body: requestBody
+          body: requestBody,
+          clientCert
         }
       });
 
@@ -1243,10 +1417,21 @@ Generate realistic, valid JSON test data for the following API operation in the 
           type="text"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="Enter OpenAPI spec URL..."
+          placeholder="Enter OpenAPI spec URL or file path..."
           className="url-input"
           onKeyDown={(e) => e.key === 'Enter' && handleLoadSpec()}
         />
+        <button
+          onClick={() => handleBrowseFile('openApiSpec')}
+          className="load-button"
+          style={{ 
+            backgroundColor: 'var(--vscode-button-secondaryBackground)',
+            color: 'var(--vscode-button-secondaryForeground)',
+            marginRight: '5px'
+          }}
+        >
+          Browse
+        </button>
         <button
           onClick={handleLoadSpec}
           disabled={loading}
@@ -1314,7 +1499,155 @@ Generate realistic, valid JSON test data for the following API operation in the 
         </div>
       )}
 
-      {fallbackMode ? (
+      {baseApiUrl && (
+        <div style={{ 
+          marginBottom: '20px', 
+          padding: '16px', 
+          backgroundColor: 'var(--vscode-textCodeBlock-background)', 
+          borderRadius: '4px', 
+          border: '1px solid var(--vscode-panel-border)' 
+        }}>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            marginBottom: '15px',
+            gap: '10px'
+          }}>
+            <input
+              type="checkbox"
+              id="clientCertEnabled"
+              checked={clientCertEnabled}
+              onChange={(e) => setClientCertEnabled(e.target.checked)}
+            />
+            <label 
+              htmlFor="clientCertEnabled" 
+              style={{ 
+                fontSize: '14px',
+                fontWeight: 'bold',
+                color: 'var(--vscode-foreground)'
+              }}
+            >
+              Enable Client Certificate Authentication
+            </label>
+          </div>
+          
+          {clientCertEnabled && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label style={{ 
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  minWidth: '120px'
+                }}>
+                  Client Certificate:
+                </label>
+                <input
+                  type="text"
+                  value={clientCertPath}
+                  onChange={(e) => setClientCertPath(e.target.value)}
+                  className="url-input"
+                  style={{ flex: 1, fontSize: '12px' }}
+                  placeholder="Path to client certificate file (.crt, .pem)"
+                />
+                <button
+                  onClick={() => handleBrowseFile('clientCert')}
+                  className="test-button"
+                  style={{ 
+                    backgroundColor: 'var(--vscode-button-secondaryBackground)',
+                    color: 'var(--vscode-button-secondaryForeground)'
+                  }}
+                >
+                  Browse
+                </button>
+              </div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label style={{ 
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  minWidth: '120px'
+                }}>
+                  Client Key:
+                </label>
+                <input
+                  type="text"
+                  value={clientKeyPath}
+                  onChange={(e) => setClientKeyPath(e.target.value)}
+                  className="url-input"
+                  style={{ flex: 1, fontSize: '12px' }}
+                  placeholder="Path to client private key file (.key, .pem)"
+                />
+                <button
+                  onClick={() => handleBrowseFile('clientKey')}
+                  className="test-button"
+                  style={{ 
+                    backgroundColor: 'var(--vscode-button-secondaryBackground)',
+                    color: 'var(--vscode-button-secondaryForeground)'
+                  }}
+                >
+                  Browse
+                </button>
+              </div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label style={{ 
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  minWidth: '120px'
+                }}>
+                  Key Passphrase:
+                </label>
+                <input
+                  type="password"
+                  value={clientCertPassphrase}
+                  onChange={(e) => setClientCertPassphrase(e.target.value)}
+                  className="url-input"
+                  style={{ flex: 1, fontSize: '12px' }}
+                  placeholder="Private key passphrase (optional)"
+                />
+              </div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label style={{ 
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  minWidth: '120px'
+                }}>
+                  CA Certificate:
+                </label>
+                <input
+                  type="text"
+                  value={caCertPath}
+                  onChange={(e) => setCaCertPath(e.target.value)}
+                  className="url-input"
+                  style={{ flex: 1, fontSize: '12px' }}
+                  placeholder="Path to CA certificate file (optional)"
+                />
+                <button
+                  onClick={() => handleBrowseFile('caCert')}
+                  className="test-button"
+                  style={{ 
+                    backgroundColor: 'var(--vscode-button-secondaryBackground)',
+                    color: 'var(--vscode-button-secondaryForeground)'
+                  }}
+                >
+                  Browse
+                </button>
+              </div>
+              
+              <div style={{ 
+                fontSize: '11px', 
+                color: 'var(--vscode-descriptionForeground)', 
+                marginTop: '5px' 
+              }}>
+                Configure client certificate authentication for mTLS (mutual TLS). All file paths should be absolute paths.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {fallbackMode || (error && operations.length === 0 && url.trim()) ? (
         <div className="fallback-mode">
           <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: 'var(--vscode-textCodeBlock-background)', borderRadius: '4px', border: '1px solid var(--vscode-panel-border)' }}>
             <h3 style={{ margin: '0 0 10px 0', color: 'var(--vscode-foreground)' }}>Manual API Testing</h3>
@@ -1356,6 +1689,36 @@ Generate realistic, valid JSON test data for the following API operation in the 
                       {method}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="save-load-section" style={{ marginTop: '20px' }}>
+                <h3>Save/Load Test Data</h3>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                  <button
+                    onClick={saveFallbackTestData}
+                    className="test-button"
+                    style={{ 
+                      padding: '12px 24px', 
+                      fontSize: '14px', 
+                      backgroundColor: 'var(--vscode-button-secondaryBackground)', 
+                      color: 'var(--vscode-button-secondaryForeground)' 
+                    }}
+                  >
+                    Save Test Data
+                  </button>
+                  <button
+                    onClick={loadFallbackTestData}
+                    className="test-button"
+                    style={{ 
+                      padding: '12px 24px', 
+                      fontSize: '14px', 
+                      backgroundColor: 'var(--vscode-button-secondaryBackground)', 
+                      color: 'var(--vscode-button-secondaryForeground)' 
+                    }}
+                  >
+                    Load Test Data
+                  </button>
                 </div>
               </div>
             </div>
