@@ -4,9 +4,7 @@ A VS Code extension that provides a React-based UI for testing OpenAPI specifica
 
 ## Screenshots
 
-![SpekAi UI](screenshot1.jpg)
-
-![SpekAi Fallback UI](screenshot2.jpg)
+Screenshots will be available once the extension is published to the VS Code Marketplace.
 
 ## Features
 

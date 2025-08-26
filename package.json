@@ -10,6 +10,28 @@
   "categories": [
     "Other"
   ],
+  "keywords": [
+    "openapi",
+    "swagger",
+    "api",
+    "testing",
+    "rest",
+    "http",
+    "client",
+    "mtls",
+    "yaml",
+    "json",
+    "postman",
+    "insomnia",
+    "api-testing",
+    "openapi-testing",
+    "swagger-testing",
+    "http-client",
+    "rest-client",
+    "api-client",
+    "certificate",
+    "authentication"
+  ],
   "activationEvents": [
     "onCommand:spekai.openTester"
   ],
@@ -51,5 +73,13 @@
     "@anthropic-ai/sdk": "^0.24.3",
     "@types/js-yaml": "^4.0.9",
     "js-yaml": "^4.1.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arasheedu/spekai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/arasheedu/spekai/issues"
+  },
+  "homepage": "https://github.com/arasheedu/spekai#readme"
 }
