@@ -131,11 +131,14 @@ const App: React.FC = () => {
   const [vscode, setVscode] = useState<any>(null);
   const [baseApiUrl, setBaseApiUrl] = useState<string>('');
   const [openApiSpec, setOpenApiSpec] = useState<any>(null);
+  const [openApiSpecUrl, setOpenApiSpecUrl] = useState<string>('');
   const [selectedLocale, setSelectedLocale] = useState<string>('en-US');
   const [llmGeneratedJson, setLlmGeneratedJson] = useState<Record<string, string>>({});
   const [generatingLlm, setGeneratingLlm] = useState<Record<string, boolean>>({});
+  const [llmProvider, setLlmProvider] = useState<Record<string, string>>({});
   const [editableJsonInput, setEditableJsonInput] = useState<Record<string, string>>({});
   const [customHeaders, setCustomHeaders] = useState<Record<string, Array<{key: string, value: string}>>>({});
+  const [globalHeaders, setGlobalHeaders] = useState<Array<{key: string, value: string}>>([]);
   
   // Fallback mode states
   const [fallbackMode, setFallbackMode] = useState(false);
@@ -206,6 +209,10 @@ const App: React.FC = () => {
               ...prev,
               [message.operationId]: message.generatedJson
             }));
+            setLlmProvider(prev => ({
+              ...prev,
+              [message.operationId]: message.provider || 'Claude'
+            }));
             // Also update the editable JSON input so user can see and edit the generated JSON
             setEditableJsonInput(prev => ({
               ...prev,
@@ -223,6 +230,9 @@ const App: React.FC = () => {
               [message.operationId]: false
             }));
             break;
+          case 'debugInfo':
+            console.log('SpekAi Debug:', message.message);
+            break;
           case 'testDataSaved':
             // Clear any existing errors when save succeeds
             setError(null);
@@ -239,6 +249,11 @@ const App: React.FC = () => {
                 setFallbackMode(true);
                 setFallbackJsonInput(message.testData.inputJson || '{\n  "key": "value"\n}');
                 setFallbackHeaders(message.testData.customHeaders || []);
+                
+                // Load global headers if available
+                if (message.testData.globalHeaders) {
+                  setGlobalHeaders(message.testData.globalHeaders);
+                }
                 
                 // Load client certificate data if available
                 if (message.testData.clientCert) {
@@ -284,6 +299,11 @@ const App: React.FC = () => {
                         ...prev,
                         [matchingOperation.id]: message.testData.customHeaders
                       }));
+                    }
+                    
+                    // Load global headers if available
+                    if (message.testData.globalHeaders) {
+                      setGlobalHeaders(message.testData.globalHeaders);
                     }
                     
                     // Load client certificate data if available
@@ -366,6 +386,7 @@ const App: React.FC = () => {
     setLoading(false);
     setError(null);
     setOpenApiSpec(spec);
+    setOpenApiSpecUrl(specUrl);
     
     // Extract base API URL from servers
     let apiBaseUrl = '';
@@ -487,7 +508,8 @@ const App: React.FC = () => {
       vscode.postMessage({
         command: 'fetchOpenApiSpec',
         url: url.trim(),
-        clientCert
+        clientCert,
+        globalHeaders: globalHeaders
       });
     } else {
       setError('VSCode API not available');
@@ -557,7 +579,14 @@ const App: React.FC = () => {
     const headers: Record<string, string> = {};
     const queryParams: string[] = [];
 
-    // Add custom headers first
+    // Add global headers first
+    globalHeaders.forEach(header => {
+      if (header.key.trim() && header.value.trim()) {
+        headers[header.key.trim()] = header.value.trim();
+      }
+    });
+
+    // Add custom headers (operation-specific headers can override global headers)
     const operationCustomHeaders = customHeaders[operation.id] || [];
     operationCustomHeaders.forEach(header => {
       if (header.key.trim() && header.value.trim()) {
@@ -1083,7 +1112,11 @@ Generate realistic, valid JSON test data for the following API operation in the 
     vscode.postMessage({
       command: 'generateLLMJson',
       prompt: prompt,
-      operationId: operation.id
+      operationId: operation.id,
+      operation: operation,
+      locale: selectedLocale,
+      openApiSpec: openApiSpec,
+      globalHeaders: globalHeaders
     });
   };
 
@@ -1194,6 +1227,7 @@ Generate realistic, valid JSON test data for the following API operation in the 
         inputJson: getCurrentJsonInput(operation),
         outputJson: formatJsonOutput(operation),
         customHeaders: customHeaders[operation.id] || [],
+        globalHeaders: globalHeaders,
         clientCert: clientCertEnabled ? {
           enabled: true,
           certPath: clientCertPath,
@@ -1202,7 +1236,8 @@ Generate realistic, valid JSON test data for the following API operation in the 
           caCertPath: caCertPath
         } : undefined,
         timestamp: new Date().toISOString(),
-        apiBaseUrl: baseApiUrl
+        apiBaseUrl: baseApiUrl,
+        openApiSpecUrl: openApiSpecUrl
       };
 
       vscode.postMessage({
@@ -1249,6 +1284,7 @@ Generate realistic, valid JSON test data for the following API operation in the 
         inputJson: fallbackJsonInput,
         outputJson: lastFallbackMethod ? getFallbackResponse(lastFallbackMethod) : '',
         customHeaders: fallbackHeaders,
+        globalHeaders: globalHeaders,
         clientCert: clientCertEnabled ? {
           enabled: true,
           certPath: clientCertPath,
@@ -1258,6 +1294,7 @@ Generate realistic, valid JSON test data for the following API operation in the 
         } : undefined,
         timestamp: new Date().toISOString(),
         apiBaseUrl: effectiveApiUrl,
+        openApiSpecUrl: openApiSpecUrl || url.trim(),
         fallbackMode: true
       };
 
@@ -1304,6 +1341,24 @@ Generate realistic, valid JSON test data for the following API operation in the 
     const result = testResults[operation.id];
     if (!result) return '';
     
+    // If there's only raw result/error text (no status), show it directly
+    if (result.result && !result.status && !result.error) {
+      try {
+        JSON.parse(result.result);
+        // If it's valid JSON, format it nicely
+        return JSON.stringify(JSON.parse(result.result), null, 2);
+      } catch {
+        // If it's not valid JSON, return raw text
+        return result.result;
+      }
+    }
+    
+    // If there's an error only, show it directly
+    if (result.error && !result.result && !result.status) {
+      return result.error;
+    }
+    
+    // Otherwise, create structured output with status
     const outputJson: any = {};
     
     if (result.status) {
@@ -1314,6 +1369,7 @@ Generate realistic, valid JSON test data for the following API operation in the 
       try {
         outputJson.response = JSON.parse(result.result);
       } catch {
+        // For raw text responses, show them directly under response field
         outputJson.response = result.result;
       }
     }
@@ -1344,7 +1400,14 @@ Generate realistic, valid JSON test data for the following API operation in the 
     try {
       const headers: Record<string, string> = {};
       
-      // Add custom headers
+      // Add global headers first
+      globalHeaders.forEach(header => {
+        if (header.key.trim() && header.value.trim()) {
+          headers[header.key.trim()] = header.value.trim();
+        }
+      });
+
+      // Add custom headers (fallback-specific headers can override global headers)
       fallbackHeaders.forEach(header => {
         if (header.key.trim() && header.value.trim()) {
           headers[header.key.trim()] = header.value.trim();
@@ -1399,6 +1462,24 @@ Generate realistic, valid JSON test data for the following API operation in the 
     const result = testResults[`fallback_${method.toLowerCase()}`];
     if (!result) return '';
     
+    // If there's only raw result/error text (no status), show it directly
+    if (result.result && !result.status && !result.error) {
+      try {
+        JSON.parse(result.result);
+        // If it's valid JSON, format it nicely
+        return JSON.stringify(JSON.parse(result.result), null, 2);
+      } catch {
+        // If it's not valid JSON, return raw text
+        return result.result;
+      }
+    }
+    
+    // If there's an error only, show it directly
+    if (result.error && !result.result && !result.status) {
+      return result.error;
+    }
+    
+    // Otherwise, create structured output with status
     const outputJson: any = {};
     
     if (result.status) {
@@ -1409,6 +1490,7 @@ Generate realistic, valid JSON test data for the following API operation in the 
       try {
         outputJson.response = JSON.parse(result.result);
       } catch {
+        // For raw text responses, show them directly under response field
         outputJson.response = result.result;
       }
     }
@@ -1462,6 +1544,185 @@ Generate realistic, valid JSON test data for the following API operation in the 
         </select>
       </div>
 
+      {/* Global Headers Section */}
+      <div style={{ 
+        marginBottom: '20px', 
+        padding: '16px', 
+        backgroundColor: 'var(--vscode-textCodeBlock-background)', 
+        borderRadius: '4px', 
+        border: '1px solid var(--vscode-panel-border)' 
+      }}>
+        <h3 style={{ 
+          margin: '0 0 15px 0', 
+          fontSize: '14px',
+          fontWeight: 'bold',
+          color: 'var(--vscode-foreground)'
+        }}>
+          Global Headers (Applied to all operations)
+        </h3>
+        <HeadersEditor
+          headers={globalHeaders}
+          onChange={setGlobalHeaders}
+        />
+        <div style={{ 
+          fontSize: '11px', 
+          color: 'var(--vscode-descriptionForeground)', 
+          marginTop: '10px' 
+        }}>
+          These headers will be added to all API requests. Operation-specific headers can override global headers.
+        </div>
+      </div>
+
+      {/* Client Certificate Section */}
+      <div style={{ 
+        marginBottom: '20px', 
+        padding: '16px', 
+        backgroundColor: 'var(--vscode-textCodeBlock-background)', 
+        borderRadius: '4px', 
+        border: '1px solid var(--vscode-panel-border)' 
+      }}>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          marginBottom: '15px',
+          gap: '10px'
+        }}>
+          <input
+            type="checkbox"
+            id="clientCertEnabled"
+            checked={clientCertEnabled}
+            onChange={(e) => setClientCertEnabled(e.target.checked)}
+          />
+          <label 
+            htmlFor="clientCertEnabled" 
+            style={{ 
+              fontSize: '14px',
+              fontWeight: 'bold',
+              color: 'var(--vscode-foreground)'
+            }}
+          >
+            Enable Client Certificate Authentication
+          </label>
+        </div>
+        
+        {clientCertEnabled && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
+              <label style={{ 
+                fontSize: '12px',
+                fontWeight: 'bold',
+                minWidth: '120px'
+              }}>
+                Client Certificate:
+              </label>
+              <input
+                type="text"
+                value={clientCertPath}
+                onChange={(e) => setClientCertPath(e.target.value)}
+                placeholder="Path to client certificate file (.crt, .pem)"
+                className="url-input"
+                style={{ flex: 1 }}
+              />
+              <button
+                onClick={() => handleBrowseFile('clientCert')}
+                className="load-button"
+                style={{ 
+                  backgroundColor: 'var(--vscode-button-secondaryBackground)',
+                  color: 'var(--vscode-button-secondaryForeground)',
+                  minWidth: 'auto'
+                }}
+              >
+                Browse
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
+              <label style={{ 
+                fontSize: '12px',
+                fontWeight: 'bold',
+                minWidth: '120px'
+              }}>
+                Private Key:
+              </label>
+              <input
+                type="text"
+                value={clientKeyPath}
+                onChange={(e) => setClientKeyPath(e.target.value)}
+                placeholder="Path to private key file (.key, .pem)"
+                className="url-input"
+                style={{ flex: 1 }}
+              />
+              <button
+                onClick={() => handleBrowseFile('clientKey')}
+                className="load-button"
+                style={{ 
+                  backgroundColor: 'var(--vscode-button-secondaryBackground)',
+                  color: 'var(--vscode-button-secondaryForeground)',
+                  minWidth: 'auto'
+                }}
+              >
+                Browse
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
+              <label style={{ 
+                fontSize: '12px',
+                fontWeight: 'bold',
+                minWidth: '120px'
+              }}>
+                Passphrase (optional):
+              </label>
+              <input
+                type="password"
+                value={clientCertPassphrase}
+                onChange={(e) => setClientCertPassphrase(e.target.value)}
+                placeholder="Private key passphrase"
+                className="url-input"
+                style={{ flex: 1 }}
+              />
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
+              <label style={{ 
+                fontSize: '12px',
+                fontWeight: 'bold',
+                minWidth: '120px'
+              }}>
+                CA Certificate (optional):
+              </label>
+              <input
+                type="text"
+                value={caCertPath}
+                onChange={(e) => setCaCertPath(e.target.value)}
+                placeholder="Path to CA certificate file (.crt, .pem)"
+                className="url-input"
+                style={{ flex: 1 }}
+              />
+              <button
+                onClick={() => handleBrowseFile('caCert')}
+                className="load-button"
+                style={{ 
+                  backgroundColor: 'var(--vscode-button-secondaryBackground)',
+                  color: 'var(--vscode-button-secondaryForeground)',
+                  minWidth: 'auto'
+                }}
+              >
+                Browse
+              </button>
+            </div>
+            
+            <div style={{ 
+              fontSize: '11px', 
+              color: 'var(--vscode-descriptionForeground)', 
+              marginTop: '5px' 
+            }}>
+              Configure client certificate authentication for mTLS (mutual TLS). All file paths should be absolute paths.
+            </div>
+          </div>
+        )}
+      </div>
+
       {error && (
         <div className="error-message" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <span style={{ flex: 1 }}>{error}</span>
@@ -1509,166 +1770,6 @@ Generate realistic, valid JSON test data for the following API operation in the 
         </div>
       )}
 
-      {baseApiUrl && (
-        <div style={{ 
-          marginBottom: '20px', 
-          padding: '16px', 
-          backgroundColor: 'var(--vscode-textCodeBlock-background)', 
-          borderRadius: '4px', 
-          border: '1px solid var(--vscode-panel-border)' 
-        }}>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            marginBottom: '15px',
-            gap: '10px'
-          }}>
-            <input
-              type="checkbox"
-              id="clientCertEnabled"
-              checked={clientCertEnabled}
-              onChange={(e) => setClientCertEnabled(e.target.checked)}
-            />
-            <label 
-              htmlFor="clientCertEnabled" 
-              style={{ 
-                fontSize: '14px',
-                fontWeight: 'bold',
-                color: 'var(--vscode-foreground)'
-              }}
-            >
-              Enable Client Certificate Authentication
-            </label>
-          </div>
-          
-          {clientCertEnabled && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-                <label style={{ 
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  minWidth: '120px'
-                }}>
-                  Client Certificate:
-                </label>
-                <input
-                  type="text"
-                  value={clientCertPath}
-                  onChange={(e) => setClientCertPath(e.target.value)}
-                  className="url-input"
-                  style={{ flex: 1, fontSize: '12px' }}
-                  placeholder="Path to client certificate file (.crt, .pem)"
-                />
-                <button
-                  onClick={() => handleBrowseFile('clientCert')}
-                  className="test-button"
-                  style={{ 
-                    backgroundColor: 'var(--vscode-button-secondaryBackground)',
-                    color: 'var(--vscode-button-secondaryForeground)',
-                    height: '34px',
-                    fontSize: '12px',
-                    padding: '0 12px',
-                    minWidth: 'auto'
-                  }}
-                >
-                  Browse
-                </button>
-              </div>
-              
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-                <label style={{ 
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  minWidth: '120px'
-                }}>
-                  Client Key:
-                </label>
-                <input
-                  type="text"
-                  value={clientKeyPath}
-                  onChange={(e) => setClientKeyPath(e.target.value)}
-                  className="url-input"
-                  style={{ flex: 1, fontSize: '12px' }}
-                  placeholder="Path to client private key file (.key, .pem)"
-                />
-                <button
-                  onClick={() => handleBrowseFile('clientKey')}
-                  className="test-button"
-                  style={{ 
-                    backgroundColor: 'var(--vscode-button-secondaryBackground)',
-                    color: 'var(--vscode-button-secondaryForeground)',
-                    height: '34px',
-                    fontSize: '12px',
-                    padding: '0 12px',
-                    minWidth: 'auto'
-                  }}
-                >
-                  Browse
-                </button>
-              </div>
-              
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <label style={{ 
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  minWidth: '120px'
-                }}>
-                  Key Passphrase:
-                </label>
-                <input
-                  type="password"
-                  value={clientCertPassphrase}
-                  onChange={(e) => setClientCertPassphrase(e.target.value)}
-                  className="url-input"
-                  style={{ flex: 1, fontSize: '12px' }}
-                  placeholder="Private key passphrase (optional)"
-                />
-              </div>
-              
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-                <label style={{ 
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  minWidth: '120px'
-                }}>
-                  CA Certificate:
-                </label>
-                <input
-                  type="text"
-                  value={caCertPath}
-                  onChange={(e) => setCaCertPath(e.target.value)}
-                  className="url-input"
-                  style={{ flex: 1, fontSize: '12px' }}
-                  placeholder="Path to CA certificate file (optional)"
-                />
-                <button
-                  onClick={() => handleBrowseFile('caCert')}
-                  className="test-button"
-                  style={{ 
-                    backgroundColor: 'var(--vscode-button-secondaryBackground)',
-                    color: 'var(--vscode-button-secondaryForeground)',
-                    height: '34px',
-                    fontSize: '12px',
-                    padding: '0 12px',
-                    minWidth: 'auto'
-                  }}
-                >
-                  Browse
-                </button>
-              </div>
-              
-              <div style={{ 
-                fontSize: '11px', 
-                color: 'var(--vscode-descriptionForeground)', 
-                marginTop: '5px' 
-              }}>
-                Configure client certificate authentication for mTLS (mutual TLS). All file paths should be absolute paths.
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {fallbackMode || (error && operations.length === 0 && url.trim()) ? (
         <div className="fallback-mode">
           <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: 'var(--vscode-textCodeBlock-background)', borderRadius: '4px', border: '1px solid var(--vscode-panel-border)' }}>
@@ -1705,8 +1806,12 @@ Generate realistic, valid JSON test data for the following API operation in the 
                     <button
                       key={method}
                       onClick={() => handleFallbackOperation(method)}
-                      className={`test-button method-button method-${method.toLowerCase()}`}
-                      style={{ padding: '12px 24px', fontSize: '14px', minWidth: '100px' }}
+                      className={`test-button method-button ${getMethodClass(method)}`}
+                      style={{ 
+                        padding: '12px', 
+                        fontSize: '13px',
+                        fontWeight: 'bold'
+                      }}
                     >
                       {method}
                     </button>
@@ -1714,34 +1819,31 @@ Generate realistic, valid JSON test data for the following API operation in the 
                 </div>
               </div>
 
-              <div className="save-load-section" style={{ marginTop: '20px' }}>
-                <h3>Save/Load Test Data</h3>
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                  <button
-                    onClick={saveFallbackTestData}
-                    className="test-button"
-                    style={{ 
-                      padding: '12px 24px', 
-                      fontSize: '14px', 
-                      backgroundColor: 'var(--vscode-button-secondaryBackground)', 
-                      color: 'var(--vscode-button-secondaryForeground)' 
-                    }}
-                  >
-                    Save Test Data
-                  </button>
-                  <button
-                    onClick={loadFallbackTestData}
-                    className="test-button"
-                    style={{ 
-                      padding: '12px 24px', 
-                      fontSize: '14px', 
-                      backgroundColor: 'var(--vscode-button-secondaryBackground)', 
-                      color: 'var(--vscode-button-secondaryForeground)' 
-                    }}
-                  >
-                    Load Test Data
-                  </button>
-                </div>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '20px' }}>
+                <button
+                  onClick={() => saveFallbackTestData()}
+                  className="test-button"
+                  style={{ 
+                    padding: '8px 16px', 
+                    fontSize: '14px', 
+                    backgroundColor: 'var(--vscode-button-secondaryBackground)', 
+                    color: 'var(--vscode-button-secondaryForeground)' 
+                  }}
+                >
+                  Save Test Data
+                </button>
+                <button
+                  onClick={() => loadFallbackTestData()}
+                  className="test-button"
+                  style={{ 
+                    padding: '8px 16px', 
+                    fontSize: '14px', 
+                    backgroundColor: 'var(--vscode-button-secondaryBackground)', 
+                    color: 'var(--vscode-button-secondaryForeground)' 
+                  }}
+                >
+                  Load Test Data
+                </button>
               </div>
             </div>
 
@@ -1768,7 +1870,6 @@ Generate realistic, valid JSON test data for the following API operation in the 
                   className={`operation-list-item ${selectedOperation?.id === operation.id ? 'selected' : ''}`}
                   onClick={() => {
                     setSelectedOperation(operation);
-                    // Initialize parameter values from schema if not already set
                     if (!parameterValues[operation.id] && operation.parameters) {
                       const initialParams: Record<string, string> = {};
                       operation.parameters.forEach(param => {
@@ -1841,7 +1942,14 @@ Generate realistic, valid JSON test data for the following API operation in the 
 
                 <div className="json-section">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <h3 style={{ margin: 0 }}>Input JSON</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <h3 style={{ margin: 0 }}>Input JSON</h3>
+                      {llmProvider[selectedOperation.id] && (
+                        <span style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', fontStyle: 'italic' }}>
+                          (Generated by {llmProvider[selectedOperation.id]})
+                        </span>
+                      )}
+                    </div>
                     <button
                       onClick={() => generateLLMJson(selectedOperation)}
                       disabled={generatingLlm[selectedOperation.id]}
@@ -1865,37 +1973,18 @@ Generate realistic, valid JSON test data for the following API operation in the 
                       try {
                         const inputData = JSON.parse(e.target.value);
                         
-                        // Update parameters if they exist in the JSON
-                        if (inputData.pathParameters || inputData.queryParameters || inputData.headerParameters) {
-                          const newParams: Record<string, string> = {};
-                          Object.entries(inputData.pathParameters || {}).forEach(([key, value]) => {
-                            newParams[key] = String(value);
-                          });
-                          Object.entries(inputData.queryParameters || {}).forEach(([key, value]) => {
-                            newParams[key] = String(value);
-                          });
-                          Object.entries(inputData.headerParameters || {}).forEach(([key, value]) => {
-                            newParams[key] = String(value);
-                          });
-                          
+                        // Extract parameter values for this operation
+                        if (inputData.pathParameters) {
                           setParameterValues(prev => ({
                             ...prev,
-                            [selectedOperation.id]: newParams
+                            [selectedOperation.id]: {
+                              ...prev[selectedOperation.id],
+                              ...inputData.pathParameters
+                            }
                           }));
                         }
-                        
-                        // Update request body if it exists in wrapped format
-                        if (inputData.requestBody !== undefined) {
-                          setRequestBodies(prev => ({
-                            ...prev,
-                            [selectedOperation.id]: typeof inputData.requestBody === 'string' 
-                              ? inputData.requestBody 
-                              : JSON.stringify(inputData.requestBody, null, 2)
-                          }));
-                        }
-                      } catch {
-                        // Invalid JSON, but still store the user's input
-                        // They might be in the middle of editing
+                      } catch (error) {
+                        // Invalid JSON, that's okay - user might still be typing
                       }
                     }}
                     placeholder="Input parameters and request body will appear here..."
@@ -1915,7 +2004,7 @@ Generate realistic, valid JSON test data for the following API operation in the 
                   />
                 </div>
 
-                <div style={{ marginBottom: '20px', textAlign: 'center', display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '20px' }}>
                   <button
                     onClick={() => handleTestOperation(selectedOperation)}
                     className="test-button"
@@ -1940,24 +2029,27 @@ Generate realistic, valid JSON test data for the following API operation in the 
                 </div>
 
                 <div className="json-section">
-                  <h3>Output JSON</h3>
+                  <h3>Response</h3>
                   <textarea
                     className="json-editor"
                     value={formatJsonOutput(selectedOperation)}
                     readOnly
-                    placeholder="Response will appear here after testing..."
+                    placeholder="Response will appear here after making a request..."
                   />
                 </div>
-
               </div>
             ) : (
               <div className="no-operation-selected">
-                Select an operation from the left panel to view details
+                Select an operation from the left panel to view details and test it
               </div>
             )}
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--vscode-descriptionForeground)' }}>
+          Load an OpenAPI specification to begin testing
+        </div>
+      )}
     </div>
   );
 };

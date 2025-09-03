@@ -1,0 +1,13 @@
+{
+  "operation": {
+    "id": "POST__api_v1_Activities",
+    "method": "POST",
+    "path": "/api/v1/Activities"
+  },
+  "inputJson": "{\n  \"requestBody\": {\n    \"id\": 1234,\n    \"title\": \"Complete quarterly sales report\",\n    \"dueDate\": \"2024-02-15T16:30:00.000Z\",\n    \"completed\": false\n  }\n}",
+  "outputJson": "{\n  \"status\": 200,\n  \"response\": {\n    \"id\": 1234,\n    \"title\": \"Complete quarterly sales report\",\n    \"dueDate\": \"2024-02-15T16:30:00Z\",\n    \"completed\": false\n  }\n}",
+  "customHeaders": [],
+  "timestamp": "2025-09-03T07:45:34.818Z",
+  "apiBaseUrl": "https://fakerestapi.azurewebsites.net/",
+  "openApiSpecUrl": "https://fakerestapi.azurewebsites.net/swagger/v1/swagger.json"
+}

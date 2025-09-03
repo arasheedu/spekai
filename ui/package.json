@@ -1,6 +1,6 @@
 {
   "name": "spekai-ui",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "private": true,
   "dependencies": {
     "@types/node": "^16.18.0",

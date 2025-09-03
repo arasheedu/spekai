@@ -2,10 +2,10 @@
   "name": "spekai",
   "displayName": "SpekAi",
   "description": "Test OpenAPI specifications with a React-based UI",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "BitsPlus",
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.74.0"
   },
   "categories": [
     "Other"
@@ -51,6 +51,19 @@
           "type": "string",
           "default": "",
           "description": "Anthropic Claude API key for generating realistic test data",
+          "scope": "application"
+        },
+        "spekai.aiProvider": {
+          "type": "string",
+          "enum": ["auto", "claude"],
+          "default": "auto",
+          "description": "AI provider preference for JSON generation. 'auto' uses Claude if configured, otherwise manual generation",
+          "scope": "application"
+        },
+        "spekai.enableFallback": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow fallback to manual generation when Claude is unavailable",
           "scope": "application"
         }
       }

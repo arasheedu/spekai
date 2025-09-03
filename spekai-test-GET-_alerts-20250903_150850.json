@@ -1,0 +1,19 @@
+{
+  "operation": {
+    "id": "GET__alerts",
+    "method": "GET",
+    "path": "/alerts"
+  },
+  "inputJson": "{\n  \"queryParameters\": {\n    \"active\": \"true\"\n  }\n}",
+  "outputJson": "",
+  "customHeaders": [],
+  "globalHeaders": [
+    {
+      "key": "User-Agent",
+      "value": "chrom"
+    }
+  ],
+  "timestamp": "2025-09-03T22:08:50.248Z",
+  "apiBaseUrl": "https://api.weather.gov",
+  "openApiSpecUrl": "https://api.weather.gov/openapi.json"
+}
