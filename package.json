@@ -4,6 +4,7 @@
   "description": "Test OpenAPI specifications with a React-based UI",
   "version": "0.2.2",
   "publisher": "BitsPlus",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.74.0"
   },
