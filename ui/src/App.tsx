@@ -169,6 +169,35 @@ const App: React.FC = () => {
       const vscodeApi = window.acquireVsCodeApi();
       setVscode(vscodeApi);
 
+      // Restore saved state
+      const previousState = vscodeApi.getState();
+      if (previousState) {
+        setUrl(previousState.url || '');
+        setBaseApiUrl(previousState.baseApiUrl || '');
+        setOpenApiSpecUrl(previousState.openApiSpecUrl || '');
+        setOperations(previousState.operations || []);
+        setSelectedOperation(previousState.selectedOperation || null);
+        setParameterValues(previousState.parameterValues || {});
+        setRequestBodies(previousState.requestBodies || {});
+        setTestResults(previousState.testResults || {});
+        setSelectedLocale(previousState.selectedLocale || 'en-US');
+        setLlmGeneratedJson(previousState.llmGeneratedJson || {});
+        setLlmProvider(previousState.llmProvider || {});
+        setEditableJsonInput(previousState.editableJsonInput || {});
+        setCustomHeaders(previousState.customHeaders || {});
+        setGlobalHeaders(previousState.globalHeaders || []);
+        setFallbackMode(previousState.fallbackMode || false);
+        setFallbackJsonInput(previousState.fallbackJsonInput || '{\n  "key": "value"\n}');
+        setFallbackHeaders(previousState.fallbackHeaders || []);
+        setLastFallbackMethod(previousState.lastFallbackMethod || '');
+        setClientCertEnabled(previousState.clientCertEnabled || false);
+        setClientCertPath(previousState.clientCertPath || '');
+        setClientKeyPath(previousState.clientKeyPath || '');
+        setClientCertPassphrase(previousState.clientCertPassphrase || '');
+        setCaCertPath(previousState.caCertPath || '');
+        setOpenApiSpec(previousState.openApiSpec || null);
+      }
+
       const handleMessage = (event: MessageEvent) => {
         const message = event.data;
         switch (message.command) {
@@ -381,6 +410,43 @@ const App: React.FC = () => {
       return () => window.removeEventListener('message', handleMessage);
     }
   }, []);
+
+  // Save state whenever key state variables change
+  useEffect(() => {
+    if (vscode) {
+      const currentState = {
+        url,
+        baseApiUrl,
+        openApiSpecUrl,
+        operations,
+        selectedOperation,
+        parameterValues,
+        requestBodies,
+        testResults,
+        selectedLocale,
+        llmGeneratedJson,
+        llmProvider,
+        editableJsonInput,
+        customHeaders,
+        globalHeaders,
+        fallbackMode,
+        fallbackJsonInput,
+        fallbackHeaders,
+        lastFallbackMethod,
+        clientCertEnabled,
+        clientCertPath,
+        clientKeyPath,
+        clientCertPassphrase,
+        caCertPath,
+        openApiSpec
+      };
+      vscode.setState(currentState);
+    }
+  }, [vscode, url, baseApiUrl, openApiSpecUrl, operations, selectedOperation, parameterValues, 
+      requestBodies, testResults, selectedLocale, llmGeneratedJson, llmProvider, editableJsonInput,
+      customHeaders, globalHeaders, fallbackMode, fallbackJsonInput, fallbackHeaders, 
+      lastFallbackMethod, clientCertEnabled, clientCertPath, clientKeyPath, clientCertPassphrase, 
+      caCertPath, openApiSpec]);
 
   const handleOpenApiSpecLoaded = (spec: any, specUrl: string) => {
     setLoading(false);

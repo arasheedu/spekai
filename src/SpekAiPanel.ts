@@ -31,6 +31,7 @@ export class SpekAiPanel {
             column || vscode.ViewColumn.One,
             {
                 enableScripts: true,
+                retainContextWhenHidden: true,
                 localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'ui', 'dist')]
             }
         );
