@@ -7,10 +7,10 @@ A VS Code extension that provides a React-based UI for validating OpenAPI specif
 ### Main Interface with OpenAPI Testing
 ![SpekAi Main Interface 1](screenshot1.jpg)
 
-### Response Handling and Test Data Management
+### Fallback Mode and Manual Testing
 ![SpekAi Main Interface 2](screenshot2.jpg)
 
-### Fallback Mode and Manual Testing
+### Response Handling and Test Data Management
 ![SpekAi Main Interface 3](screenshot3.jpg)
 
 ## Features
