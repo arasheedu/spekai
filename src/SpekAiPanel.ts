@@ -4,7 +4,6 @@ import * as https from 'https';
 import * as http from 'http';
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
-import Anthropic from '@anthropic-ai/sdk';
 
 export class SpekAiPanel {
     public static currentPanel: SpekAiPanel | undefined;
@@ -27,7 +26,7 @@ export class SpekAiPanel {
 
         const panel = vscode.window.createWebviewPanel(
             SpekAiPanel.viewType,
-            'SpekAi Tester',
+            'SpekAi - OpenApi Spec Validator',
             column || vscode.ViewColumn.One,
             {
                 enableScripts: true,
@@ -107,7 +106,7 @@ export class SpekAiPanel {
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <link href="${styleUri}" rel="stylesheet">
-                <title>SpekAi Tester</title>
+                <title>SpekAi - OpenApi Spec Validator</title>
             </head>
             <body>
                 <div id="root"></div>
@@ -1036,7 +1035,7 @@ export class SpekAiPanel {
             const enableFallback = config.get<boolean>('enableFallback', true);
             
             let generatedJson: string | undefined;
-            let provider = 'Claude';
+            let provider = 'GitHub Copilot';
             
             const providers = await this._getAvailableProviders();
             console.log('Available AI providers:', providers);
@@ -1044,44 +1043,44 @@ export class SpekAiPanel {
             // Send debug info to UI
             this._panel.webview.postMessage({
                 command: 'debugInfo',
-                message: `AI Provider Setting: ${aiProvider}, Available: Claude=${providers.claude}, Fallback: ${enableFallback}`
+                message: `AI Provider Setting: ${aiProvider}, Available: GitHub Copilot=${providers.copilot}, Fallback: ${enableFallback}`
             });
 
             let lastError: Error | null = null;
             let attemptedProviders: string[] = [];
             
-            // Try Claude first if available
-            if (providers.claude) {
-                attemptedProviders.push('claude');
+            // Try GitHub Copilot first if available
+            if (providers.copilot) {
+                attemptedProviders.push('copilot');
                 try {
-                    console.log('Trying provider: claude');
+                    console.log('Trying provider: copilot');
                     this._panel.webview.postMessage({
                         command: 'debugInfo',
-                        message: 'Attempting to generate JSON using Claude...'
+                        message: 'Attempting to generate JSON using GitHub Copilot...'
                     });
                     
-                    generatedJson = await this._generateWithClaude(prompt);
-                    provider = 'Claude';
+                    generatedJson = await this._generateWithCopilot(prompt);
+                    provider = 'GitHub Copilot';
                     
-                    console.log('Successfully generated JSON using Claude');
+                    console.log('Successfully generated JSON using GitHub Copilot');
                     this._panel.webview.postMessage({
                         command: 'debugInfo',
-                        message: '✅ Successfully generated JSON using Claude'
+                        message: '✅ Successfully generated JSON using GitHub Copilot'
                     });
                     
                 } catch (error) {
                     const errorMessage = error instanceof Error ? error.message : String(error);
-                    console.error('Claude generation failed:', error);
+                    console.error('GitHub Copilot generation failed:', error);
                     lastError = error instanceof Error ? error : new Error(errorMessage);
                     
                     this._panel.webview.postMessage({
                         command: 'debugInfo',
-                        message: `❌ Claude failed: ${errorMessage}`
+                        message: `❌ GitHub Copilot failed: ${errorMessage}`
                     });
                 }
             }
             
-            // If Claude failed or is not available, use manual generation
+            // If GitHub Copilot failed or is not available, use manual generation
             if (!generatedJson) {
                 attemptedProviders.push('manual');
                 try {
@@ -1116,7 +1115,7 @@ export class SpekAiPanel {
                 const errorDetails = `
 Attempted providers: ${attemptedProviders.join(', ')}
 Last error: ${lastError?.message || 'Unknown error'}
-Provider availability: Claude=${providers.claude}
+Provider availability: GitHub Copilot=${providers.copilot}
                 `.trim();
                 throw new Error(`All providers failed to generate JSON. ${errorDetails}`);
             }
@@ -1145,62 +1144,79 @@ Provider availability: Claude=${providers.claude}
         }
     }
 
-    private async _getAvailableProviders(): Promise<{claude: boolean}> {
+    private async _getAvailableProviders(): Promise<{copilot: boolean}> {
         return {
-            claude: this._isClaudeConfigured()
+            copilot: await this._isCopilotAvailable()
         };
     }
 
-    private _isClaudeConfigured(): boolean {
-        const config = vscode.workspace.getConfiguration('spekai');
-        const apiKey = config.get<string>('claudeApiKey') || process.env.ANTHROPIC_API_KEY;
-        const isConfigured = !!apiKey;
-        console.log(`Claude configuration check: API key ${isConfigured ? 'found' : 'not found'}`);
-        return isConfigured;
+    private async _isCopilotAvailable(): Promise<boolean> {
+        try {
+            // Check if GitHub Copilot extension is available and language models are supported
+            const models = await vscode.lm.selectChatModels({
+                vendor: 'copilot',
+                family: 'gpt-4o'
+            });
+            const isAvailable = models.length > 0;
+            console.log(`GitHub Copilot configuration check: ${isAvailable ? 'available' : 'not available'}`);
+            return isAvailable;
+        } catch (error) {
+            console.log('GitHub Copilot not available:', error);
+            return false;
+        }
     }
 
 
-    private async _generateWithClaude(prompt: string): Promise<string> {
-        // Get Claude API key from VSCode settings or environment variables
-        const config = vscode.workspace.getConfiguration('spekai');
-        let apiKey = config.get<string>('claudeApiKey');
-        
-        // Fallback to environment variable if not in settings
-        if (!apiKey) {
-            apiKey = process.env.ANTHROPIC_API_KEY;
+    private async _generateWithCopilot(prompt: string): Promise<string> {
+        try {
+            // Select the GitHub Copilot chat model
+            const models = await vscode.lm.selectChatModels({
+                vendor: 'copilot',
+                family: 'gpt-4o'
+            });
+
+            if (models.length === 0) {
+                throw new Error('GitHub Copilot chat model not available. Please ensure GitHub Copilot is installed and you have access.');
+            }
+
+            const model = models[0];
+            console.log(`Using GitHub Copilot model: ${model.name}`);
+
+            // Create chat request
+            const messages = [
+                vscode.LanguageModelChatMessage.User(prompt)
+            ];
+
+            const chatRequest = await model.sendRequest(messages, { modelOptions: { temperature: 1.0 } }, new vscode.CancellationTokenSource().token);
+            
+            // Collect the response
+            let responseText = '';
+            for await (const fragment of chatRequest.text) {
+                responseText += fragment;
+            }
+
+            console.log('GitHub Copilot raw response length:', responseText.length);
+
+            // Extract JSON from the response (in case Copilot adds explanation)
+            let generatedJson = responseText.trim();
+            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                generatedJson = jsonMatch[0];
+            }
+
+            // Validate that it's proper JSON
+            try {
+                JSON.parse(generatedJson);
+            } catch (parseError) {
+                throw new Error(`Generated content from GitHub Copilot is not valid JSON: ${parseError}`);
+            }
+
+            return generatedJson;
+            
+        } catch (error) {
+            console.error('GitHub Copilot generation error:', error);
+            throw error;
         }
-        
-        if (!apiKey) {
-            throw new Error('Claude API key not found. Please set it in VSCode settings (spekai.claudeApiKey) or ANTHROPIC_API_KEY environment variable.');
-        }
-
-        const anthropic = new Anthropic({
-            apiKey: apiKey,
-        });
-
-        const message = await anthropic.messages.create({
-            model: "claude-3-5-sonnet-20241022",
-            max_tokens: 2000,
-            temperature: 0.7,
-            messages: [
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ]
-        });
-
-        // Extract the generated JSON from Claude's response
-        const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
-        
-        // Try to extract JSON from the response (in case Claude adds explanation)
-        let generatedJson = responseText;
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            generatedJson = jsonMatch[0];
-        }
-
-        return generatedJson;
     }
 
     private async _saveTestData(testData: any, operationId: string) {

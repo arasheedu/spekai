@@ -166,6 +166,8 @@ body {
   padding: 12px;
   flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .operation-title {
@@ -258,6 +260,18 @@ body {
 
 .json-section {
   margin-bottom: 12px;
+}
+
+.json-section.fill {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.json-section.fill .json-editor {
+  flex: 1;
+  min-height: 120px;
 }
 
 .json-section h3 {

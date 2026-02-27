@@ -1,0 +1,14 @@
+{
+  "operation": {
+    "id": "POST__api_v1_Activities",
+    "method": "POST",
+    "path": "/api/v1/Activities"
+  },
+  "inputJson": "{\n  \"requestBody\": {\n    \"id\": 101,\n    \"title\": \"खरीदारी की सूची\",\n    \"dueDate\": \"2023-11-15T14:30:00+05:30\",\n    \"completed\": false\n  }\n}",
+  "outputJson": "{\n  \"status\": 200,\n  \"response\": {\n    \"id\": 101,\n    \"title\": \"खरीदारी की सूची\",\n    \"dueDate\": \"2023-11-15T09:00:00+00:00\",\n    \"completed\": false\n  }\n}",
+  "customHeaders": [],
+  "globalHeaders": [],
+  "timestamp": "2026-02-26T23:32:00.467Z",
+  "apiBaseUrl": "https://fakerestapi.azurewebsites.net/",
+  "openApiSpecUrl": "https://fakerestapi.azurewebsites.net/swagger/v1/swagger.json"
+}

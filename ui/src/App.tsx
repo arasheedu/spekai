@@ -124,6 +124,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [operations, setOperations] = useState<Operation[]>([]);
+  const [operationFilter, setOperationFilter] = useState('');
   const [selectedOperation, setSelectedOperation] = useState<Operation | null>(null);
   const [parameterValues, setParameterValues] = useState<Record<string, Record<string, string>>>({});
   const [requestBodies, setRequestBodies] = useState<Record<string, string>>({});
@@ -153,6 +154,9 @@ const App: React.FC = () => {
   const [clientKeyPath, setClientKeyPath] = useState<string>('');
   const [clientCertPassphrase, setClientCertPassphrase] = useState<string>('');
   const [caCertPath, setCaCertPath] = useState<string>('');
+
+  // Pending test data waiting for spec to load
+  const [pendingTestData, setPendingTestData] = useState<any>(null);
 
   // Auto-enable fallback mode when error conditions are met
   useEffect(() => {
@@ -354,19 +358,19 @@ const App: React.FC = () => {
                       }
                     }
                   } else {
-                    // Check if any operations are loaded at all
-                    if (currentOps.length === 0) {
-                      setError(
-                        `Could not find matching operation: ${loadedOperation.method} ${loadedOperation.path}\n\n` +
-                        `No operations are currently loaded. Please load an OpenAPI specification first, then try loading your test data again.`
-                      );
+                    // Operation not found - try reloading from saved spec URL
+                    const specUrlToLoad = message.testData.openApiSpecUrl;
+                    if (specUrlToLoad) {
+                      // Clear current operations so useEffect triggers spec reload
+                      setPendingTestData(message.testData);
+                      setUrl(specUrlToLoad);
+                      setOperations([]);
+                      setSelectedOperation(null);
+                      return []; // Return empty to clear operations
                     } else {
-                      // Show available operations to help user understand the mismatch
-                      const availableOps = currentOps.map(op => `${op.method} ${op.path}`).join(', ');
                       setError(
                         `Could not find matching operation: ${loadedOperation.method} ${loadedOperation.path}\n\n` +
-                        `Available operations in current spec: ${availableOps}\n\n` +
-                        `Please load the correct OpenAPI specification that contains this operation.`
+                        `No saved spec URL available. Please load the correct OpenAPI specification manually.`
                       );
                     }
                   }
@@ -447,6 +451,77 @@ const App: React.FC = () => {
       customHeaders, globalHeaders, fallbackMode, fallbackJsonInput, fallbackHeaders, 
       lastFallbackMethod, clientCertEnabled, clientCertPath, clientKeyPath, clientCertPassphrase, 
       caCertPath, openApiSpec]);
+
+  // Trigger spec load when pending test data is set and no operations are loaded
+  useEffect(() => {
+    if (pendingTestData && operations.length === 0 && vscode && !loading) {
+      const specUrl = pendingTestData.openApiSpecUrl;
+      if (specUrl) {
+        setLoading(true);
+        setError(null);
+        setFallbackMode(false);
+        setBaseApiUrl('');
+        setOpenApiSpec(null);
+
+        const clientCert = pendingTestData.clientCert && pendingTestData.clientCert.enabled ? {
+          enabled: true,
+          certPath: pendingTestData.clientCert.certPath,
+          keyPath: pendingTestData.clientCert.keyPath,
+          passphrase: pendingTestData.clientCert.passphrase,
+          caCertPath: pendingTestData.clientCert.caCertPath
+        } : undefined;
+
+        vscode.postMessage({
+          command: 'fetchOpenApiSpec',
+          url: specUrl,
+          clientCert,
+          globalHeaders: pendingTestData.globalHeaders || []
+        });
+      }
+    }
+  }, [pendingTestData, vscode, operations.length, loading]);
+
+  // Apply pending test data once operations are loaded
+  useEffect(() => {
+    if (pendingTestData && operations.length > 0) {
+      const loadedOperation = pendingTestData.operation;
+      const matchingOperation = operations.find(op =>
+        op.method === loadedOperation.method && op.path === loadedOperation.path
+      );
+
+      if (matchingOperation) {
+        setError(null);
+        setSelectedOperation(matchingOperation);
+        setEditableJsonInput(prev => ({
+          ...prev,
+          [matchingOperation.id]: pendingTestData.inputJson
+        }));
+        if (pendingTestData.customHeaders) {
+          setCustomHeaders(prev => ({
+            ...prev,
+            [matchingOperation.id]: pendingTestData.customHeaders
+          }));
+        }
+        if (pendingTestData.globalHeaders) {
+          setGlobalHeaders(pendingTestData.globalHeaders);
+        }
+        if (pendingTestData.clientCert) {
+          setClientCertEnabled(pendingTestData.clientCert.enabled || false);
+          setClientCertPath(pendingTestData.clientCert.certPath || '');
+          setClientKeyPath(pendingTestData.clientCert.keyPath || '');
+          setClientCertPassphrase(pendingTestData.clientCert.passphrase || '');
+          setCaCertPath(pendingTestData.clientCert.caCertPath || '');
+        }
+      } else {
+        const availableOps = operations.map(op => `${op.method} ${op.path}`).join(', ');
+        setError(
+          `Could not find matching operation: ${loadedOperation.method} ${loadedOperation.path}\n\n` +
+          `Available operations in current spec: ${availableOps}`
+        );
+      }
+      setPendingTestData(null);
+    }
+  }, [operations, pendingTestData]);
 
   const handleOpenApiSpecLoaded = (spec: any, specUrl: string) => {
     setLoading(false);
@@ -849,28 +924,43 @@ const App: React.FC = () => {
     return resolveAllRefs(requestBodySchema, openApiSpec);
   };
 
-  const generateLLMPrompt = (operation: Operation, locale: string): string => {
+  const generateLLMPrompt = (operation: Operation, locale: string, previousOutput?: string): string => {
     const localeInfo = LOCALES.find(l => l.code === locale) || LOCALES[0];
-    
+
     // Extract detailed schemas from the operation
     const parameterSchemas = extractParameterSchemas(operation);
     const requestBodySchema = extractRequestBodySchema(operation);
-    
-    let prompt = `You are a helpful assistant that generates realistic test data for API operations. 
+
+    let prompt = `You are a helpful assistant that generates realistic test data for API operations.
 
 Generate realistic, valid JSON test data for the following API operation in the ${localeInfo.name} locale:
 
 **Operation**: ${operation.method} ${operation.path}
 **Description**: ${operation.description || operation.summary || 'No description provided'}
 
-**Instructions:**
+`;
+
+    // Include previous output so the model explicitly avoids repeating it
+    if (previousOutput && previousOutput.trim() && previousOutput.trim() !== '{\n  "key": "value"\n}') {
+      prompt += `**PREVIOUSLY GENERATED DATA — DO NOT REUSE ANY OF THESE VALUES:**
+\`\`\`json
+${previousOutput}
+\`\`\`
+
+You MUST generate completely different values for every single field. Do NOT copy or reuse ANY string, number, name, email, address, phone number, or ID from the data shown above. Every value must be entirely new and different.
+
+`;
+    }
+
+    prompt += `**Instructions:**
 1. Generate realistic data appropriate for ${localeInfo.name} locale
 2. Use real-looking names, addresses, phone numbers, emails, etc. for the locale
 3. Follow the exact JSON schemas provided below - these are the ACTUAL schemas from the OpenAPI specification
 4. Do not include the "url" field in your response
-5. Make the data diverse and realistic
+5. Every value MUST be unique — use completely different names, cities, numbers, emails than any prior output
 6. Use proper data types and respect constraints (enums, formats, min/max values, patterns)
 7. Generate data that would pass validation against the provided schemas
+8. Be creative: use uncommon but realistic names, lesser-known cities, varied domains for emails
 
 `;
 
@@ -1173,8 +1263,10 @@ Generate realistic, valid JSON test data for the following API operation in the 
       [operation.id]: true
     }));
 
-    const prompt = generateLLMPrompt(operation, selectedLocale);
-    
+    // Pass current input as previous output so the model can avoid repeating it
+    const previousOutput = editableJsonInput[operation.id] || llmGeneratedJson[operation.id] || '';
+    const prompt = generateLLMPrompt(operation, selectedLocale, previousOutput);
+
     vscode.postMessage({
       command: 'generateLLMJson',
       prompt: prompt,
@@ -1581,33 +1673,76 @@ Generate realistic, valid JSON test data for the following API operation in the 
         />
         <button
           onClick={() => handleBrowseFile('openApiSpec')}
-          className="load-button"
-          style={{ 
-            backgroundColor: 'var(--vscode-button-secondaryBackground)',
-            color: 'var(--vscode-button-secondaryForeground)',
-            marginRight: '5px'
+          style={{
+            width: '80px',
+            height: '32px',
+            backgroundColor: 'var(--vscode-button-background)',
+            color: 'var(--vscode-button-foreground)',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '13px',
+            flexShrink: 0
           }}
+          onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-hoverBackground)')}
+          onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-background)')}
         >
           Browse
         </button>
         <button
           onClick={handleLoadSpec}
           disabled={loading}
-          className="load-button"
+          style={{
+            width: '80px',
+            height: '32px',
+            backgroundColor: 'var(--vscode-button-background)',
+            color: 'var(--vscode-button-foreground)',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontSize: '13px',
+            opacity: loading ? 0.6 : 1,
+            flexShrink: 0
+          }}
+          onMouseOver={(e) => { if (!loading) e.currentTarget.style.backgroundColor = 'var(--vscode-button-hoverBackground)'; }}
+          onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-background)')}
         >
           {loading ? 'Loading...' : 'Load'}
         </button>
-        <select
-          value={selectedLocale}
-          onChange={(e) => setSelectedLocale(e.target.value)}
-          className="locale-select"
+      </div>
+
+      <div style={{ marginBottom: '20px' }}>
+        <button
+          onClick={() => {
+            if (!vscode) {
+              setError('VSCode API not available');
+              return;
+            }
+            try {
+              vscode.postMessage({
+                command: 'loadTestData',
+                currentOperationId: 'main_screen_load',
+                fallbackMode: true
+              });
+            } catch (err) {
+              setError(`Failed to load saved request: ${err}`);
+            }
+          }}
+          style={{
+            padding: '10px 20px',
+            fontSize: '14px',
+            backgroundColor: 'var(--vscode-button-background)',
+            color: 'var(--vscode-button-foreground)',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            width: '100%'
+          }}
+          onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-hoverBackground)')}
+          onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-background)')}
         >
-          {LOCALES.map(locale => (
-            <option key={locale.code} value={locale.code}>
-              {locale.name}
-            </option>
-          ))}
-        </select>
+          Load Saved Request
+        </button>
       </div>
 
       {/* Global Headers Section */}
@@ -1673,11 +1808,12 @@ Generate realistic, valid JSON test data for the following API operation in the 
         
         {clientCertEnabled && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-              <label style={{ 
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{
                 fontSize: '12px',
                 fontWeight: 'bold',
-                minWidth: '120px'
+                width: '160px',
+                flexShrink: 0
               }}>
                 Client Certificate:
               </label>
@@ -1691,22 +1827,30 @@ Generate realistic, valid JSON test data for the following API operation in the 
               />
               <button
                 onClick={() => handleBrowseFile('clientCert')}
-                className="load-button"
-                style={{ 
-                  backgroundColor: 'var(--vscode-button-secondaryBackground)',
-                  color: 'var(--vscode-button-secondaryForeground)',
-                  minWidth: 'auto'
+                style={{
+                  width: '80px',
+                  height: '32px',
+                  flexShrink: 0,
+                  backgroundColor: 'var(--vscode-button-background)',
+                  color: 'var(--vscode-button-foreground)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '13px'
                 }}
+                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-hoverBackground)')}
+                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-background)')}
               >
                 Browse
               </button>
             </div>
-            
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-              <label style={{ 
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{
                 fontSize: '12px',
                 fontWeight: 'bold',
-                minWidth: '120px'
+                width: '160px',
+                flexShrink: 0
               }}>
                 Private Key:
               </label>
@@ -1720,22 +1864,30 @@ Generate realistic, valid JSON test data for the following API operation in the 
               />
               <button
                 onClick={() => handleBrowseFile('clientKey')}
-                className="load-button"
-                style={{ 
-                  backgroundColor: 'var(--vscode-button-secondaryBackground)',
-                  color: 'var(--vscode-button-secondaryForeground)',
-                  minWidth: 'auto'
+                style={{
+                  width: '80px',
+                  height: '32px',
+                  flexShrink: 0,
+                  backgroundColor: 'var(--vscode-button-background)',
+                  color: 'var(--vscode-button-foreground)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '13px'
                 }}
+                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-hoverBackground)')}
+                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-background)')}
               >
                 Browse
               </button>
             </div>
-            
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-              <label style={{ 
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{
                 fontSize: '12px',
                 fontWeight: 'bold',
-                minWidth: '120px'
+                width: '160px',
+                flexShrink: 0
               }}>
                 Passphrase (optional):
               </label>
@@ -1747,13 +1899,15 @@ Generate realistic, valid JSON test data for the following API operation in the 
                 className="url-input"
                 style={{ flex: 1 }}
               />
+              <div style={{ width: '80px', flexShrink: 0 }} />
             </div>
-            
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-              <label style={{ 
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{
                 fontSize: '12px',
                 fontWeight: 'bold',
-                minWidth: '120px'
+                width: '160px',
+                flexShrink: 0
               }}>
                 CA Certificate (optional):
               </label>
@@ -1767,12 +1921,19 @@ Generate realistic, valid JSON test data for the following API operation in the 
               />
               <button
                 onClick={() => handleBrowseFile('caCert')}
-                className="load-button"
-                style={{ 
-                  backgroundColor: 'var(--vscode-button-secondaryBackground)',
-                  color: 'var(--vscode-button-secondaryForeground)',
-                  minWidth: 'auto'
+                style={{
+                  width: '80px',
+                  height: '32px',
+                  flexShrink: 0,
+                  backgroundColor: 'var(--vscode-button-background)',
+                  color: 'var(--vscode-button-foreground)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '13px'
                 }}
+                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-hoverBackground)')}
+                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-background)')}
               >
                 Browse
               </button>
@@ -1888,27 +2049,19 @@ Generate realistic, valid JSON test data for the following API operation in the 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '20px' }}>
                 <button
                   onClick={() => saveFallbackTestData()}
-                  className="test-button"
-                  style={{ 
-                    padding: '8px 16px', 
-                    fontSize: '14px', 
-                    backgroundColor: 'var(--vscode-button-secondaryBackground)', 
-                    color: 'var(--vscode-button-secondaryForeground)' 
+                  style={{
+                    padding: '10px 24px',
+                    fontSize: '14px',
+                    backgroundColor: 'var(--vscode-button-background)',
+                    color: 'var(--vscode-button-foreground)',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
                   }}
+                  onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-hoverBackground)')}
+                  onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-background)')}
                 >
                   Save Test Data
-                </button>
-                <button
-                  onClick={() => loadFallbackTestData()}
-                  className="test-button"
-                  style={{ 
-                    padding: '8px 16px', 
-                    fontSize: '14px', 
-                    backgroundColor: 'var(--vscode-button-secondaryBackground)', 
-                    color: 'var(--vscode-button-secondaryForeground)' 
-                  }}
-                >
-                  Load Test Data
                 </button>
               </div>
             </div>
@@ -1929,8 +2082,25 @@ Generate realistic, valid JSON test data for the following API operation in the 
       ) : operations.length > 0 ? (
         <div className="main-content">
           <div className="left-panel">
+            <div style={{ padding: '8px', borderBottom: '1px solid var(--vscode-panel-border)' }}>
+              <input
+                type="text"
+                value={operationFilter}
+                onChange={(e) => setOperationFilter(e.target.value)}
+                placeholder="Filter operations..."
+                className="url-input"
+                style={{ width: '100%', fontSize: '12px', padding: '5px 8px' }}
+              />
+            </div>
             <ul className="operations-list">
-              {operations.map(operation => (
+              {operations.filter(op => {
+                if (!operationFilter.trim()) return true;
+                const query = operationFilter.toLowerCase();
+                return op.method.toLowerCase().includes(query)
+                  || op.path.toLowerCase().includes(query)
+                  || (op.summary && op.summary.toLowerCase().includes(query))
+                  || (op.description && op.description.toLowerCase().includes(query));
+              }).map(operation => (
                 <li 
                   key={operation.id} 
                   className={`operation-list-item ${selectedOperation?.id === operation.id ? 'selected' : ''}`}
@@ -2006,7 +2176,7 @@ Generate realistic, valid JSON test data for the following API operation in the 
                   </p>
                 )}
 
-                <div className="json-section">
+                <div className="json-section fill">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <h3 style={{ margin: 0 }}>Input JSON</h3>
@@ -2016,14 +2186,28 @@ Generate realistic, valid JSON test data for the following API operation in the 
                         </span>
                       )}
                     </div>
-                    <button
-                      onClick={() => generateLLMJson(selectedOperation)}
-                      disabled={generatingLlm[selectedOperation.id]}
-                      className="test-button"
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                    >
-                      {generatingLlm[selectedOperation.id] ? 'Generating...' : 'Generate with AI'}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <select
+                        value={selectedLocale}
+                        onChange={(e) => setSelectedLocale(e.target.value)}
+                        className="locale-select"
+                        style={{ fontSize: '12px', padding: '0 8px', height: '30px', boxSizing: 'border-box', margin: 0 }}
+                      >
+                        {LOCALES.map(locale => (
+                          <option key={locale.code} value={locale.code}>
+                            {locale.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => generateLLMJson(selectedOperation)}
+                        disabled={generatingLlm[selectedOperation.id]}
+                        className="test-button"
+                        style={{ padding: '0 12px', fontSize: '12px', height: '30px', boxSizing: 'border-box', margin: 0, minWidth: '130px' }}
+                      >
+                        {generatingLlm[selectedOperation.id] ? 'Generating...' : 'Generate with AI'}
+                      </button>
+                    </div>
                   </div>
                   <textarea
                     className="json-editor"
@@ -2073,28 +2257,43 @@ Generate realistic, valid JSON test data for the following API operation in the 
                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '20px' }}>
                   <button
                     onClick={() => handleTestOperation(selectedOperation)}
-                    className="test-button"
-                    style={{ padding: '12px 24px', fontSize: '14px' }}
+                    style={{
+                      padding: '0 24px',
+                      fontSize: '14px',
+                      height: '38px',
+                      boxSizing: 'border-box',
+                      backgroundColor: 'var(--vscode-button-background)',
+                      color: 'var(--vscode-button-foreground)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-hoverBackground)')}
+                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-background)')}
                   >
                     Test Operation
                   </button>
                   <button
                     onClick={() => saveTestData(selectedOperation)}
-                    className="test-button"
-                    style={{ padding: '12px 24px', fontSize: '14px', backgroundColor: 'var(--vscode-button-secondaryBackground)', color: 'var(--vscode-button-secondaryForeground)' }}
+                    style={{
+                      padding: '0 24px',
+                      fontSize: '14px',
+                      height: '38px',
+                      boxSizing: 'border-box',
+                      backgroundColor: 'var(--vscode-button-background)',
+                      color: 'var(--vscode-button-foreground)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-hoverBackground)')}
+                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--vscode-button-background)')}
                   >
                     Save Test Data
                   </button>
-                  <button
-                    onClick={() => loadTestData(selectedOperation)}
-                    className="test-button"
-                    style={{ padding: '12px 24px', fontSize: '14px', backgroundColor: 'var(--vscode-button-secondaryBackground)', color: 'var(--vscode-button-secondaryForeground)' }}
-                  >
-                    Load Test Data
-                  </button>
                 </div>
 
-                <div className="json-section">
+                <div className="json-section fill" style={{ marginBottom: 0 }}>
                   <h3>Response</h3>
                   <textarea
                     className="json-editor"

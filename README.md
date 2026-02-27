@@ -30,9 +30,9 @@ A VS Code extension that provides a React-based UI for validating OpenAPI specif
 - **Raw Response Support**: Automatically displays raw text responses when APIs return non-JSON content (HTML, plain text, XML, etc.)
 
 ### Advanced Testing Features
-- **Claude LLM Integration**: Cloud-based AI generation using Anthropic's Claude for high-quality test data
-- **Intelligent Fallback**: Seamless fallback between providers when one is unavailable or fails
-- **Multi-Language Support**: Generate test data appropriate for 20+ locales when using Claude (English, Spanish, French, German, Japanese, etc.)
+- **GitHub Copilot Integration**: AI-powered test data generation using GitHub Copilot's language model for high-quality, contextual test data
+- **Intelligent Fallback**: Seamless fallback between AI generation and manual generation when GitHub Copilot is unavailable
+- **Multi-Language Support**: Generate test data appropriate for 20+ locales when using GitHub Copilot (English, Spanish, French, German, Japanese, etc.)
 - **Global Headers Support**: Configure HTTP headers that apply to all operations and OpenAPI spec loading
 - **Custom Headers Management**: Add, edit, and remove custom HTTP headers per operation
 - **Schema-Based Examples**: Automatically generate example values from OpenAPI schemas with intelligent JSON generation using OpenAPI spec examples
@@ -110,7 +110,7 @@ A VS Code extension that provides a React-based UI for validating OpenAPI specif
 
 ### Basic OpenAPI Testing
 1. Open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
-2. Run the command "Open SpekAi Tester"
+2. Run the command "Open SpekAi - OpenApi Spec Validator"
 3. **Load OpenAPI Specification**:
    - **Remote**: Enter an OpenAPI specification URL (e.g., `https://petstore3.swagger.io/api/v3/openapi.json`)
    - **Local File**: Click "Browse" to select a local OpenAPI file (.json, .yaml, .yml)
@@ -120,10 +120,10 @@ A VS Code extension that provides a React-based UI for validating OpenAPI specif
 7. Click "Test Operation" to execute and view responses
 
 ### Advanced Features
-  - Click "Generate with AI" to create realistic test data for any locale
-- **Global Headers**: Configure HTTP headers that apply to all operations and OpenAPI spec loading (visible immediately on load)
+- **Generate with AI**: Create realistic test data for any supported locale using GitHub Copilot
+- **Global Headers**: Configure HTTP headers that apply to all operations and OpenAPI spec loading
 - **Custom Headers**: Use the headers editor to add authentication tokens or custom headers per operation
-- **Client Certificates**: Enable mTLS authentication by configuring client certificate paths using Browse buttons (visible immediately on load)
+- **Client Certificates**: Enable mTLS authentication by configuring client certificate paths using Browse buttons
 - **File Browsing**: Use Browse buttons throughout the interface to select files with native OS dialogs
 - **Save/Load**: Save test configurations with smart filenames (including server name) and reload them later for consistent testing
 - **Manual Testing**: If OpenAPI spec fails to load, use the fallback mode with HTTP method buttons
@@ -136,6 +136,15 @@ When OpenAPI specification loading fails, the extension automatically switches t
 4. View responses and save/load test configurations
 
 ## Configuration
+
+### Prerequisites
+
+**GitHub Copilot**: This extension uses GitHub Copilot for AI-powered test data generation. Make sure you have:
+1. **GitHub Copilot extension** installed in VS Code
+2. **Active GitHub Copilot subscription** 
+3. **Signed in to GitHub** in VS Code
+
+If GitHub Copilot is not available, the extension will automatically fall back to manual JSON generation.
 
 ### Accessing Settings
 
@@ -168,7 +177,7 @@ cd ui && npm run build && cd ..
 2. **Make sure all dependencies are installed**: Run `npm install` and `cd ui && npm install`
 3. **Build the project**: Run `npm run compile` and `cd ui && npm run build`  
 4. **Press F5** to run the extension in a new Extension Development Host window
-5. **In the new window**, open Command Palette (`Ctrl+Shift+P`) and run **"Open SpekAi Tester"**
+5. **In the new window**, open Command Palette (`Ctrl+Shift+P`) and run **"Open SpekAi - OpenApi Spec Validator"**
 
 ### Troubleshooting
 

@@ -5,6 +5,38 @@ All notable changes to the SpekAi extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-26
+
+### Changed
+- **VS Code Language Model API Integration**: Replaced Claude API with VS Code's built-in Language Model API
+  - Uses `vscode.lm.selectChatModels()` for AI-powered test data generation
+  - Leverages GitHub Copilot's GPT-4o model instead of external Claude API
+  - Maintains all existing functionality including locale support and sophisticated prompting
+
+- **Removed External Dependencies**: Eliminated `@anthropic-ai/sdk` dependency from `package.json`
+  - No more external API key configuration required
+  - Simplified extension setup and reduced bundle size
+
+- **Updated Configuration**: Replaced Claude API key settings with GitHub Copilot integration
+  - GitHub Copilot subscription is now a prerequisite for AI features
+  - Removed Claude API key configuration requirements
+
+### Added
+- **Load Saved Request Button**: Added a dedicated full-width button on the main screen to load previously saved test requests
+  - Auto-loads the OpenAPI specification from the saved file
+  - Automatically selects the matching operation and populates all saved data (input JSON, headers, certificates)
+  - Supports loading different saved requests sequentially, reloading the spec as needed
+
+### Improved
+- **Language Selector Placement**: Moved the locale dropdown from the top URL bar to sit adjacent to the "Generate with AI" button for better contextual grouping
+
+- **Streamlined UI**: Removed redundant "Load Test Data" button from the Request/Response panel to avoid duplication with the main screen button
+
+### Updated
+- **Documentation**: Updated README.md to reflect GitHub Copilot integration
+  - Added clear prerequisites for GitHub Copilot subscription
+  - Removed references to Claude API key setup
+
 ## [0.2.0] - 2024-08-26
 
 ### Added
