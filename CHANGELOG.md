@@ -5,6 +5,28 @@ All notable changes to the SpekAi extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-02-28
+
+### Added
+- **Operations Filtering**: Added search/filter input at the top of the operations list panel, filtering by method, path, summary, and description
+
+### Improved
+- **AI Test Data Uniqueness**: Enhanced prompt to include previously generated data so the model avoids repeating values; added `temperature: 1.0` for increased variation
+- **Consistent Button Styling**: Unified Browse, Load, Save Test Data, and Test Operation buttons across the entire UI with matching height, width, border-radius, and hover effects
+- **Client Certificate Panel Alignment**: All labels use fixed width for consistent left-alignment; Browse buttons are uniform size
+- **Generate with AI Button**: Fixed width (`minWidth: 130px`) prevents horizontal resizing when text changes to "Generating..."
+- **Locale Selector Placement**: Moved from URL bar to adjacent to the "Generate with AI" button with matched heights
+- **Fallback Mode Layout**: Request Body and Response panels now fill available vertical space
+
+### Fixed
+- **Fallback Mode Load**: URL field, API Base URL, request body, and response are now correctly restored from saved fallback requests
+- **URL Field Persistence**: Added `savedUrl` field to save files to preserve the exact URL field value across save/load cycles
+- **Silent Load**: Removed `confirm()` prompt dialogs when loading saved requests — URL and base URL update silently
+
+### Changed
+- **Renamed Extension**: "SpekAi Tester" renamed to "SpekAi - OpenApi Spec Validator" throughout the codebase
+- **Documentation**: Removed "(visible immediately on load)" text from README.md
+
 ## [0.3.0] - 2026-02-26
 
 ### Changed

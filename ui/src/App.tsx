@@ -282,12 +282,43 @@ const App: React.FC = () => {
                 setFallbackMode(true);
                 setFallbackJsonInput(message.testData.inputJson || '{\n  "key": "value"\n}');
                 setFallbackHeaders(message.testData.customHeaders || []);
-                
+
+                // Update URL field from saved data
+                if (message.testData.savedUrl) {
+                  setUrl(message.testData.savedUrl);
+                } else if (message.testData.openApiSpecUrl) {
+                  setUrl(message.testData.openApiSpecUrl);
+                } else if (message.testData.apiBaseUrl) {
+                  setUrl(message.testData.apiBaseUrl);
+                }
+                if (message.testData.openApiSpecUrl) {
+                  setOpenApiSpecUrl(message.testData.openApiSpecUrl);
+                }
+                if (message.testData.apiBaseUrl) {
+                  setBaseApiUrl(message.testData.apiBaseUrl);
+                }
+
+                // Restore the response output and last method
+                if (message.testData.outputJson) {
+                  // Extract method from saved operation id (e.g. "fallback_get" -> "get")
+                  const savedMethod = loadedOperation.id
+                    ? loadedOperation.id.replace('fallback_', '').toUpperCase()
+                    : 'GET';
+                  setLastFallbackMethod(savedMethod);
+                  setTestResults(prev => ({
+                    ...prev,
+                    [`fallback_${savedMethod.toLowerCase()}`]: {
+                      operationId: `fallback_${savedMethod.toLowerCase()}`,
+                      result: message.testData.outputJson
+                    }
+                  }));
+                }
+
                 // Load global headers if available
                 if (message.testData.globalHeaders) {
                   setGlobalHeaders(message.testData.globalHeaders);
                 }
-                
+
                 // Load client certificate data if available
                 if (message.testData.clientCert) {
                   setClientCertEnabled(message.testData.clientCert.enabled || false);
@@ -295,15 +326,6 @@ const App: React.FC = () => {
                   setClientKeyPath(message.testData.clientCert.keyPath || '');
                   setClientCertPassphrase(message.testData.clientCert.passphrase || '');
                   setCaCertPath(message.testData.clientCert.caCertPath || '');
-                }
-                
-                if (message.testData.apiBaseUrl && message.testData.apiBaseUrl !== baseApiUrl) {
-                  const shouldUpdateUrl = confirm(
-                    `The loaded test data uses a different API base URL:\n${message.testData.apiBaseUrl}\n\nDo you want to update the current API base URL?`
-                  );
-                  if (shouldUpdateUrl) {
-                    setBaseApiUrl(message.testData.apiBaseUrl);
-                  }
                 }
               } else {
                 // Get current operations state immediately and also through state access
@@ -348,14 +370,9 @@ const App: React.FC = () => {
                       setCaCertPath(message.testData.clientCert.caCertPath || '');
                     }
                     
-                    // Optionally update API base URL
-                    if (message.testData.apiBaseUrl && message.testData.apiBaseUrl !== baseApiUrl) {
-                      const shouldUpdateUrl = confirm(
-                        `The loaded test data uses a different API base URL:\n${message.testData.apiBaseUrl}\n\nDo you want to update the current API base URL?`
-                      );
-                      if (shouldUpdateUrl) {
-                        setBaseApiUrl(message.testData.apiBaseUrl);
-                      }
+                    // Update API base URL from saved data
+                    if (message.testData.apiBaseUrl) {
+                      setBaseApiUrl(message.testData.apiBaseUrl);
                     }
                   } else {
                     // Operation not found - try reloading from saved spec URL
@@ -1395,7 +1412,8 @@ You MUST generate completely different values for every single field. Do NOT cop
         } : undefined,
         timestamp: new Date().toISOString(),
         apiBaseUrl: baseApiUrl,
-        openApiSpecUrl: openApiSpecUrl
+        openApiSpecUrl: openApiSpecUrl,
+        savedUrl: url.trim()
       };
 
       vscode.postMessage({
@@ -1453,6 +1471,7 @@ You MUST generate completely different values for every single field. Do NOT cop
         timestamp: new Date().toISOString(),
         apiBaseUrl: effectiveApiUrl,
         openApiSpecUrl: openApiSpecUrl || url.trim(),
+        savedUrl: url.trim(),
         fallbackMode: true
       };
 
@@ -2008,7 +2027,7 @@ You MUST generate completely different values for every single field. Do NOT cop
 
           <div className="fallback-content">
             <div className="fallback-left-panel">
-              <div className="json-section">
+              <div className="json-section fill">
                 <h3>Request Body (JSON)</h3>
                 <textarea
                   className="json-editor"
@@ -2067,7 +2086,7 @@ You MUST generate completely different values for every single field. Do NOT cop
             </div>
 
             <div className="fallback-right-panel">
-              <div className="json-section">
+              <div className="json-section fill" style={{ marginBottom: 0 }}>
                 <h3>Response</h3>
                 <textarea
                   className="json-editor"
